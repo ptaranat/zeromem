@@ -1,0 +1,18 @@
+{"session_id": "s1", "speaker": "user", "text": "Big news: Carrie and I are opening a bookstore in Jersey City called Dungeon Books. SFF and RPGs.", "ts": 1683000000}
+{"session_id": "s1", "speaker": "assistant", "text": "Congratulations to you and Carrie! What's the focus, new books or used?", "ts": 1683000060}
+{"session_id": "s1", "speaker": "user", "text": "Mostly new SFF, plus a wall of tabletop RPGs and zines.", "ts": 1683000120}
+{"session_id": "s1", "speaker": "assistant", "text": "A zine wall sounds right for the scene.", "ts": 1683000180}
+{"session_id": "s1", "speaker": "user", "text": "Feels full circle. I moved to Jersey City on February 14, 2022 and always wished it had a genre bookstore.", "ts": 1683000240}
+{"session_id": "s1", "speaker": "assistant", "text": "A Valentine's Day move! Where will the store be?", "ts": 1683000300}
+{"session_id": "s1", "speaker": "user", "text": "Brunswick Street. The used shelving cost $1200 and one bookcase arrived cracked.", "ts": 1683000360}
+{"session_id": "s2", "speaker": "user", "text": "We split the work: Carrie is handling the sci-fi and fantasy buying from Ingram.", "ts": 1685600000}
+{"session_id": "s2", "speaker": "assistant", "text": "Good split. What's your side?", "ts": 1685600060}
+{"session_id": "s2", "speaker": "user", "text": "RPGs, Square, and IT. The catalog import is half the job.", "ts": 1685600120}
+{"session_id": "s2", "speaker": "user", "text": "Big news at home: we got a dog! Her name is Lychee.", "ts": 1685600180}
+{"session_id": "s2", "speaker": "assistant", "text": "Congrats! What breed is Lychee?", "ts": 1685600240}
+{"session_id": "s2", "speaker": "user", "text": "She's a corgi. Store mascot in spirit.", "ts": 1685600300}
+{"session_id": "s3", "speaker": "user", "text": "Opening is penciled in for July 26.", "ts": 1688300000}
+{"session_id": "s3", "speaker": "assistant", "text": "Does that give the shelving repairs enough time?", "ts": 1688300060}
+{"session_id": "s3", "speaker": "user", "text": "The opening got moved to August 23. Buildout ran long.", "ts": 1688300120}
+{"session_id": "s3", "speaker": "assistant", "text": "Noted, August 23. When's the party?", "ts": 1688300180}
+{"session_id": "s3", "speaker": "user", "text": "Launch party is October 5. Lychee gets a bandana, obviously.", "ts": 1688300240}
