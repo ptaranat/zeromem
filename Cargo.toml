@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/zeromem", "crates/zeromem-py"]
+default-members = ["crates/zeromem"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Panat Taranat <panat@taranat.com>"]
+
+[profile.release]
+lto = "thin"

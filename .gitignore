@@ -1,0 +1,8 @@
+/target
+*.db
+*.db-journal
+.venv/
+__pycache__/
+*.whl
+dist/
+.fastembed_cache/
