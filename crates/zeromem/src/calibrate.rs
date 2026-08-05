@@ -1,7 +1,4 @@
-//! Deterministic calibration (paper eq 15-16). Evidence level: filter hard
-//! violations and superseded values, rank by profile compatibility, cap the
-//! budget. Answer level: extract typed candidates from evidence and correct an
-//! unsupported reader answer without another model call.
+//! Deterministic calibration, paper eq 15-16.
 
 use crate::closure::{EvidenceRole, Selected};
 use crate::config::Config;
@@ -78,9 +75,8 @@ fn violates_boundary(turn: &Turn, profile: &QueryProfile, session_order: &[Strin
     }
 }
 
-/// For Time/Number questions with a recency preference, a main whose typed
-/// value conflicts with a later-session main covering the same subjects is
-/// superseded state, drop it.
+/// Drops mains whose date/number value conflicts with a later-session main
+/// when the query prefers the latest state.
 fn superseded_mains(selected: &[Selected], turns: &[Turn], profile: &QueryProfile) -> HashSet<u32> {
     let mut out = HashSet::new();
     if !matches!(profile.answer_type, AnswerType::Time | AnswerType::Number)
@@ -121,12 +117,14 @@ pub struct CalibratedAnswer {
     pub candidates: Vec<String>,
 }
 
-/// eq 16: keep a supported answer; replace an unsupported scalar only when the
-/// evidence offers exactly one type-compatible candidate; prune list items
-/// absent from evidence. Never invents content.
+/// eq 16: replace an unsupported scalar only when evidence has exactly one
+/// type-compatible candidate; prune list items absent from evidence.
 pub fn calibrate_answer(answer: &str, profile: &QueryProfile, evidence_texts: &[&str]) -> CalibratedAnswer {
     let evidence_lower: Vec<String> = evidence_texts.iter().map(|t| t.to_lowercase()).collect();
-    let candidates = typed_candidates(profile.answer_type, evidence_texts);
+    let candidates: Vec<String> = typed_candidates(profile.answer_type, evidence_texts)
+        .into_iter()
+        .filter(|c| !profile.subjects.contains(c))
+        .collect();
     let answer_lower = answer.to_lowercase();
 
     let supported = candidates.iter().any(|c| answer_lower.contains(c.as_str()))
@@ -228,6 +226,14 @@ mod tests {
         );
         assert!(out.changed);
         assert_eq!(out.answer, "Lychee, Mochi");
+    }
+
+    #[test]
+    fn subject_never_becomes_the_answer() {
+        let p = build_profile("Who did Carrie meet at the market?", &N);
+        let out = calibrate_answer("someone", &p, &["Carrie met Panat at the market."]);
+        assert!(out.changed, "{out:?}");
+        assert_eq!(out.answer, "panat");
     }
 
     #[test]
