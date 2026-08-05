@@ -39,10 +39,10 @@ fn json_out<T: serde::Serialize>(py: Python<'_>, value: &T) -> PyResult<PyObject
     Ok(to_py(py, &v))
 }
 
-/// Zero-Mem memory store. All operations are token-free; no LLM is called.
+/// Zero-Mem store over a single SQLite file.
 #[pyclass]
 struct ZeroMem {
-    inner: Mutex<zeromem::ZeroMem>,
+    inner: Mutex<zm::ZeroMem>,
 }
 
 #[pymethods]
@@ -52,11 +52,11 @@ impl ZeroMem {
     #[pyo3(signature = (path, use_model = true, model_cache_dir = None))]
     fn new(path: &str, use_model: bool, model_cache_dir: Option<&str>) -> PyResult<Self> {
         let embedder = if use_model {
-            zeromem::default_embedder(model_cache_dir.map(std::path::Path::new))
+            zm::default_embedder(model_cache_dir.map(std::path::Path::new))
         } else {
-            Box::new(zeromem::embed::HashEmbedder::default()) as Box<dyn zeromem::embed::Embedder>
+            Box::new(zm::embed::HashEmbedder::default()) as Box<dyn zm::embed::Embedder>
         };
-        let inner = zeromem::ZeroMem::open(&PathBuf::from(path), zeromem::config::Config::default(), embedder)
+        let inner = zm::ZeroMem::open(&PathBuf::from(path), zm::config::Config::default(), embedder)
             .map_err(err)?;
         Ok(Self { inner: Mutex::new(inner) })
     }
@@ -96,8 +96,8 @@ impl ZeroMem {
     }
 }
 
-#[pymodule]
-fn zeromem(m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pymodule(name = "zeromem")]
+fn zeromem_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ZeroMem>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
