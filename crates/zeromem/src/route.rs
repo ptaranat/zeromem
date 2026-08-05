@@ -1,5 +1,4 @@
-//! Query-conditioned routing (paper eq 7). Both views always run; the route
-//! only sets which one is primary in fusion.
+//! Routing, paper eq 7. Both views always run; the route picks the primary.
 
 use crate::profile::{AnswerType, QueryProfile};
 

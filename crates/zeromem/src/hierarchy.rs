@@ -1,7 +1,5 @@
-//! Temporal hierarchy (paper eq 5): turns -> windows -> episodes, plus local
-//! spans materialized at retrieval. Windows are fixed-size runs of adjacent
-//! turns in one session; episodes split on session change, time gap, or a drop
-//! in adjacent-window centroid similarity.
+//! Temporal hierarchy, paper eq 5: turns -> windows -> episodes. Episodes
+//! split on session change, time gap, or centroid similarity drop.
 
 use crate::config::Config;
 use crate::embed::{cosine, l2_normalize};

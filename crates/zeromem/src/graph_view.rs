@@ -1,6 +1,5 @@
-//! Relational retrieval (paper eq 8-10): align query entities to graph
-//! entities, propagate activation through co-occurring turns, run Personalized
-//! PageRank over the entity-context graph, then refine with exact matches.
+//! Graph view, paper eq 8-10: entity alignment, activation propagation,
+//! personalized pagerank, exact-match refinement.
 
 use crate::config::Config;
 use crate::embed::cosine;
@@ -39,8 +38,7 @@ pub fn retrieve(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32> {
     scores
 }
 
-/// eq 8-9. Seeds are query entities aligned by cosine; activation spreads to
-/// entities co-occurring in turns relevant to the query.
+/// eq 8-9: seed from query entities, spread activation through co-occurrence.
 fn seed_and_propagate(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32> {
     let g = input.graph;
     let mut act: HashMap<u32, f32> = HashMap::new();
@@ -50,7 +48,7 @@ fn seed_and_propagate(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32>
             act.insert(id, 1.0);
         }
     }
-    // Dense alignment for query entities with no exact match.
+    // no exact match: dense alignment
     if act.is_empty() && !g.is_empty() {
         for subject in &input.profile.subjects {
             let sub_vec = best_effort_entity_vec(subject, input);
@@ -72,7 +70,7 @@ fn seed_and_propagate(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32>
         return act;
     }
 
-    // Precompute sim(q, z) per turn once; reused across steps.
+    // sim(q, z) per turn, shared across propagation steps
     let turn_sim: Vec<f32> = input
         .turn_vecs
         .iter()
@@ -103,10 +101,9 @@ fn seed_and_propagate(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32>
     act
 }
 
+// Unseen query subjects fall back to the query embedding; the aligned entity
+// still has to clear align_threshold.
 fn best_effort_entity_vec(subject: &str, input: &GraphViewInput) -> Option<Vec<f32>> {
-    // Entities are embedded by name at ingest; query subjects reuse the query
-    // embedding as a proxy when the name is unseen. Cheap and adequate: the
-    // aligned entity still has to clear align_threshold.
     if input.entity_vecs.is_empty() || subject.is_empty() {
         None
     } else {
@@ -122,7 +119,7 @@ fn personalized_pagerank(input: &GraphViewInput, activations: &HashMap<u32, f32>
     let nt = input.turns.len();
     let n = ne + nt;
 
-    // Reset distribution: entity activations plus dense context priors, half mass each.
+    // reset: entity activations + dense context priors, half mass each
     let mut reset = vec![0.0f32; n];
     let act_total: f32 = activations.values().sum();
     let priors: Vec<f32> = input

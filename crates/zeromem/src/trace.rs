@@ -1,5 +1,4 @@
-//! Trace units are the source of record. Text is never rewritten or summarized;
-//! every derived structure points back here (provenance preservation).
+//! Raw turns, never rewritten. Derived structures reference these by index.
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Turn {

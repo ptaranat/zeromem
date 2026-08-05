@@ -124,7 +124,7 @@ mod fast {
             if texts.is_empty() {
                 return Ok(vec![]);
             }
-            let mut model = self.model.lock().unwrap();
+            let model = self.model.lock().unwrap();
             let mut vecs = model
                 .embed(texts.to_vec(), None)
                 .map_err(|e| Error::Embed(e.to_string()))?;

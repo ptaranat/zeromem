@@ -1,5 +1,5 @@
-//! Dual-view fusion (paper eq 12-13): per-view min-max normalization over each
-//! view's own candidates, absent candidates score 0, weighted sum by route.
+//! Fusion, paper eq 12-13: per-view min-max over own candidates, absent
+//! candidates score 0, weighted sum.
 
 use std::collections::HashMap;
 

@@ -1,6 +1,5 @@
-//! Evidence closure (paper eq 14): supplement main evidence with graph
-//! neighbors (relational bridges) and hierarchy neighbors (local spans), then
-//! dedup by turn id.
+//! Evidence closure, paper eq 14: main evidence + graph bridges + local
+//! neighbors, deduped by turn.
 
 use crate::config::Config;
 use crate::graph::EntityGraph;
@@ -59,8 +58,7 @@ pub fn close(
     out
 }
 
-/// Strongest co-occurrence neighbor: turn sharing entities with m, scored by
-/// sum of min shared weights.
+/// Turn sharing entities with m, scored by min shared weight.
 fn best_graph_neighbor(m: u32, graph: &EntityGraph, seen: &HashSet<u32>) -> Option<u32> {
     let m_weights = graph.turn_weights(m);
     let mut best: Option<(u32, f32)> = None;
@@ -87,9 +85,7 @@ fn best_graph_neighbor(m: u32, graph: &EntityGraph, seen: &HashSet<u32>) -> Opti
     best.map(|(d, _)| d)
 }
 
-/// Immediate span: previous and next turn in-session. Short or anaphoric turns
-/// (pronoun openers, no capitalized anchors) get the full local span since they
-/// depend on surrounding context to be readable.
+/// Prev/next turn in-session; short or anaphoric turns get the full span.
 fn local_neighbors(m: u32, turns: &[Turn], cfg: &Config) -> Vec<u32> {
     let t = &turns[m as usize];
     let needs_span = t.text.len() < 48 || starts_anaphoric(&t.text);

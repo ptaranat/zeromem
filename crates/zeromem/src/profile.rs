@@ -1,5 +1,4 @@
-//! Query profile (paper eq 6): subject, keywords, answer type, temporal cues,
-//! boundary. Derived from the query text alone, deterministically.
+//! Query profile, paper eq 6.
 
 use crate::ner::{Entity, EntityExtractor, EntityKind};
 use crate::text::content_tokens;

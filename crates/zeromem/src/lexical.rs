@@ -1,5 +1,4 @@
-//! BM25 over turns plus exact-phrase matching. These refine rankings; they
-//! never generate or rewrite content.
+//! BM25 over turns, plus exact-phrase matching.
 
 use std::collections::HashMap;
 

@@ -1,5 +1,5 @@
-//! Non-generative entity extraction (paper section: relational trace graph).
-//! Default extractor is heuristic; the trait leaves room for an ONNX NER model.
+//! Heuristic entity extraction. The paper uses spaCy; anything non-generative
+//! qualifies, swap in an ONNX NER via the trait if quality matters.
 
 use crate::text::{is_stopword, split_sentences};
 use regex::Regex;
@@ -81,7 +81,7 @@ fn patterns() -> &'static Patterns {
     })
 }
 
-/// Words that pass the capitalization test at sentence start but are rarely entities.
+/// Capitalized at sentence start but rarely an entity.
 fn sentence_start_noise(w: &str) -> bool {
     let lower = w.to_lowercase();
     is_stopword(&lower)

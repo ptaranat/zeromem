@@ -1,5 +1,4 @@
-//! Hierarchical retrieval (paper eq 11): episodes -> windows -> turns, scored
-//! by semantic relevance refined with structural compatibility signals.
+//! Hierarchical retrieval, paper eq 11: episodes -> windows -> turns.
 
 use crate::config::Config;
 use crate::embed::{cosine, l2_normalize};
@@ -35,7 +34,7 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
         0.5 * dense + 0.5 * lex
     };
 
-    // Episode beam by best contained turn.
+    // episode beam
     let mut episode_scores: Vec<(u32, f32)> = input
         .hier
         .episodes
@@ -57,7 +56,7 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
     episode_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
     episode_scores.truncate(cfg.episode_beam);
 
-    // Window beam within surviving episodes, then turns within windows.
+    // window beam within surviving episodes
     let mut window_scores: Vec<(u32, f32)> = Vec::new();
     for (ep, _) in &episode_scores {
         for (wid, w) in input.hier.windows_of_episode(*ep) {
@@ -84,10 +83,8 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
     out
 }
 
-/// Compatibility signals refine the semantic ranking (paper: subject
-/// consistency, temporal validity, boundary consistency, answer type, lexical
-/// support). Returned as a bonus multiplier component; a boundary mismatch is
-/// a strong penalty applied by returning a large negative bonus.
+/// Bonus term for the (1 + bonus) multiplier: subject, temporal, boundary,
+/// answer-type, and phrase signals. Boundary mismatch goes strongly negative.
 fn compatibility(input: &HierViewInput, turn: u32) -> f32 {
     let t = &input.turns[turn as usize];
     let p = input.profile;

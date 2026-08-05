@@ -1,5 +1,5 @@
-//! SQLite persistence: turns plus cached embeddings. Graph, hierarchy, and BM25
-//! are deterministic functions of the turns and are rebuilt in memory on open.
+//! SQLite: turns + cached embeddings. Everything else is derived from turns
+//! and rebuilt in memory on open.
 
 use crate::error::Result;
 use crate::trace::Turn;

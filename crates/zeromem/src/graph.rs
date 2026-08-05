@@ -1,6 +1,5 @@
-//! Entity-context graph (paper eq 3-4). Nodes are entities and turns; edges are
-//! observed co-occurrence (entity appears in turn) and turn adjacency. Weights
-//! are occurrence counts normalized per turn: w(d,e) = c(e,d) / sum_e' c(e',d).
+//! Entity-context graph, paper eq 3-4. Observed co-occurrence only, no
+//! inferred relations. w(d,e) = c(e,d) / sum_e' c(e',d).
 
 use crate::ner::{Entity, EntityKind};
 use std::collections::HashMap;
