@@ -4,7 +4,7 @@ Wraps the zeromem Rust core (Zero-Mem, arXiv 2607.29377). Every memory
 operation is deterministic and token-free; only the host's own reader call
 touches an LLM.
 
-Install: symlink this directory to ~/.hermes/plugins/memory/zeromem/, install
+Install: symlink this directory to ~/.hermes/plugins/zeromem/, install
 the zeromem wheel into the Hermes environment, set memory.provider: zeromem.
 """
 

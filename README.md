@@ -80,7 +80,7 @@ m.calibrate_answer("When did I move?", "June 2021", ["I moved to Jersey City on 
 ## Hermes Agent
 
 ```
-ln -s $(pwd)/hermes/zeromem ~/.hermes/plugins/memory/zeromem
+ln -s $(pwd)/hermes/zeromem ~/.hermes/plugins/zeromem
 uv pip install --python <hermes-python> target/wheels/zeromem_py-*.whl
 ```
 
