@@ -8,6 +8,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["Panat Taranat <panat@taranat.com>"]
+repository = "https://github.com/ptaranat/zeromem"
 
 [profile.release]
 lto = "thin"
