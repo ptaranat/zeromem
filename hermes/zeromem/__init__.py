@@ -197,7 +197,9 @@ class ZeroMemProvider(MemoryProvider):
             if tool_name == "zeromem_forget_session":
                 if self._read_only:
                     return json.dumps({"error": "memory is read-only in this context"})
-                sid = args["session_id"]
+                sid = args.get("session_id")
+                if not sid:
+                    return json.dumps({"error": "session_id is required"})
                 if sid == self._session_id:
                     return json.dumps({"error": "refusing to delete the active session"})
                 with self._lock:
