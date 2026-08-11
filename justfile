@@ -26,7 +26,7 @@ dev: venv
     VIRTUAL_ENV=$PWD/.venv .venv/bin/maturin develop -m crates/zeromem-py/Cargo.toml --release
 
 wheel: venv
-    .venv/bin/maturin build -m crates/zeromem-py/Cargo.toml --release
+    VIRTUAL_ENV=$PWD/.venv PATH=$PWD/.venv/bin:$PATH .venv/bin/maturin build -m crates/zeromem-py/Cargo.toml --release
 
 pysmoke: dev
     .venv/bin/python hermes/zeromem/smoke.py
