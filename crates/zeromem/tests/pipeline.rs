@@ -122,3 +122,19 @@ fn persistence_roundtrip() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn deleted_session_leaves_no_trace_in_retrieval() {
+    let mut zm = corpus();
+    let sessions_before = zm.stats().sessions;
+    let removed = zm.delete_session("s1").unwrap();
+    assert!(removed > 0);
+    assert_eq!(zm.stats().sessions, sessions_before - 1);
+
+    for q in ["What did the shelving cost?", "What breed is Lychee?", "When did I move to Jersey City?"] {
+        let result = zm.query(q, None).unwrap();
+        for e in &result.evidence {
+            assert_ne!(e.session_id, "s1", "deleted session leaked for {q:?}: {e:?}");
+        }
+    }
+}

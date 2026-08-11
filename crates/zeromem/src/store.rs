@@ -126,6 +126,22 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_session_turns(&self, session_id: &str) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM turns WHERE session_id = ?1", [session_id])?)
+    }
+
+    pub fn embedding_keys(&self, kind: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT key FROM embeddings WHERE kind = ?1")?;
+        let rows = stmt.query_map([kind], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn delete_embedding(&self, kind: &str, key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM embeddings WHERE kind = ?1 AND key = ?2", [kind, key])?;
+        Ok(())
+    }
+
     pub fn turn_count(&self) -> Result<i64> {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM turns", [], |r| r.get(0))?)
     }

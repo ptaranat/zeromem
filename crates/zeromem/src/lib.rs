@@ -135,6 +135,54 @@ impl ZeroMem {
         Ok(turn.id)
     }
 
+    /// Deletes a session's turns, rebuilds the derived state from the
+    /// surviving turns, and drops embedding-cache rows nothing references
+    /// anymore. Returns the number of turns removed.
+    pub fn delete_session(&mut self, session_id: &str) -> Result<usize> {
+        let removed = self.store.delete_session_turns(session_id)?;
+        if removed == 0 {
+            return Ok(0);
+        }
+        self.rebuild()?;
+        self.sweep_embedding_cache()?;
+        Ok(removed)
+    }
+
+    fn rebuild(&mut self) -> Result<()> {
+        self.turns.clear();
+        self.turn_vecs.clear();
+        self.entity_vecs.clear();
+        self.graph = EntityGraph::default();
+        self.hier = Hierarchy::default();
+        self.bm25 = Bm25::default();
+        self.session_order.clear();
+        for turn in self.store.load_turns()? {
+            self.index_turn(turn)?;
+        }
+        Ok(())
+    }
+
+    /// Orphaned cache rows are never loaded (indexing only reads keys for
+    /// live turns and entities), so this reclaims space rather than fixing
+    /// retrieval; a crash mid-sweep leaves nothing worse than unswept rows.
+    fn sweep_embedding_cache(&self) -> Result<()> {
+        let live: std::collections::HashSet<String> =
+            self.turns.iter().map(|t| t.id.to_string()).collect();
+        for key in self.store.embedding_keys("turn")? {
+            if !live.contains(&key) {
+                self.store.delete_embedding("turn", &key)?;
+            }
+        }
+        let live: std::collections::HashSet<&str> =
+            self.graph.entities.iter().map(|e| e.canon.as_str()).collect();
+        for key in self.store.embedding_keys("entity")? {
+            if !live.contains(key.as_str()) {
+                self.store.delete_embedding("entity", &key)?;
+            }
+        }
+        Ok(())
+    }
+
     fn index_turn(&mut self, turn: Turn) -> Result<()> {
         let idx = self.turns.len() as u32;
         let vec = self.embedding("turn", &turn.id.to_string(), &turn.text)?;
@@ -249,6 +297,31 @@ impl ZeroMem {
             episodes: self.hier.episodes.len(),
             embedder: self.embedder.id(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::embed::HashEmbedder;
+
+    #[test]
+    fn delete_session_cascades_to_cache() {
+        let mut zm =
+            ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        zm.ingest_turn("keep", "user", "Carrie adopted Lychee in Jersey City.", 1000).unwrap();
+        zm.ingest_turn("drop", "user", "Slowdive played the Fillmore with MBV.", 2000).unwrap();
+
+        assert_eq!(zm.delete_session("drop").unwrap(), 1);
+        assert_eq!(zm.stats().turns, 1);
+        assert_eq!(zm.stats().sessions, 1);
+
+        assert_eq!(zm.store.embedding_keys("turn").unwrap().len(), 1);
+        let entity_keys = zm.store.embedding_keys("entity").unwrap();
+        assert_eq!(entity_keys.len(), zm.graph.len(), "{entity_keys:?}");
+        assert!(!entity_keys.contains(&"slowdive".to_string()), "{entity_keys:?}");
+
+        assert_eq!(zm.delete_session("drop").unwrap(), 0);
     }
 }
 
