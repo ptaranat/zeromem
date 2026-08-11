@@ -138,49 +138,56 @@ impl ZeroMem {
     /// Deletes a session's turns, rebuilds the derived state from the
     /// surviving turns, and drops embedding-cache rows nothing references
     /// anymore. Returns the number of turns removed.
+    ///
+    /// The rebuild happens before the database is touched and rolls back on
+    /// failure, so an error leaves both memory and disk as they were. A
+    /// failure after the turn delete leaves at most unswept cache rows.
     pub fn delete_session(&mut self, session_id: &str) -> Result<usize> {
-        let removed = self.store.delete_session_turns(session_id)?;
-        if removed == 0 {
+        let (survivors, removed): (Vec<Turn>, Vec<Turn>) = self
+            .store
+            .load_turns()?
+            .into_iter()
+            .partition(|t| t.session_id != session_id);
+        if removed.is_empty() {
             return Ok(0);
         }
-        self.rebuild()?;
+        self.rebuild_from(survivors)?;
+        self.store.delete_session_turns(session_id)?;
         self.sweep_embedding_cache()?;
-        Ok(removed)
+        Ok(removed.len())
     }
 
-    fn rebuild(&mut self) -> Result<()> {
-        self.turns.clear();
-        self.turn_vecs.clear();
-        self.entity_vecs.clear();
-        self.graph = EntityGraph::default();
-        self.hier = Hierarchy::default();
-        self.bm25 = Bm25::default();
-        self.session_order.clear();
-        for turn in self.store.load_turns()? {
-            self.index_turn(turn)?;
+    fn rebuild_from(&mut self, turns: Vec<Turn>) -> Result<()> {
+        let backup = (
+            std::mem::take(&mut self.turns),
+            std::mem::take(&mut self.turn_vecs),
+            std::mem::take(&mut self.entity_vecs),
+            std::mem::take(&mut self.graph),
+            std::mem::take(&mut self.hier),
+            std::mem::take(&mut self.bm25),
+            std::mem::take(&mut self.session_order),
+        );
+        let result = turns.into_iter().try_for_each(|t| self.index_turn(t));
+        if result.is_err() {
+            (
+                self.turns,
+                self.turn_vecs,
+                self.entity_vecs,
+                self.graph,
+                self.hier,
+                self.bm25,
+                self.session_order,
+            ) = backup;
         }
-        Ok(())
+        result
     }
 
     /// Orphaned cache rows are never loaded (indexing only reads keys for
     /// live turns and entities), so this reclaims space rather than fixing
     /// retrieval; a crash mid-sweep leaves nothing worse than unswept rows.
-    fn sweep_embedding_cache(&self) -> Result<()> {
-        let live: std::collections::HashSet<String> =
-            self.turns.iter().map(|t| t.id.to_string()).collect();
-        for key in self.store.embedding_keys("turn")? {
-            if !live.contains(&key) {
-                self.store.delete_embedding("turn", &key)?;
-            }
-        }
-        let live: std::collections::HashSet<&str> =
-            self.graph.entities.iter().map(|e| e.canon.as_str()).collect();
-        for key in self.store.embedding_keys("entity")? {
-            if !live.contains(key.as_str()) {
-                self.store.delete_embedding("entity", &key)?;
-            }
-        }
-        Ok(())
+    fn sweep_embedding_cache(&mut self) -> Result<()> {
+        let live: Vec<&str> = self.graph.entities.iter().map(|e| e.canon.as_str()).collect();
+        self.store.sweep_orphan_embeddings(&live)
     }
 
     fn index_turn(&mut self, turn: Turn) -> Result<()> {
