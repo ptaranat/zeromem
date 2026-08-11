@@ -48,6 +48,22 @@ _STATS_SCHEMA = {
     "parameters": {"type": "object", "properties": {}},
 }
 
+_FORGET_SCHEMA = {
+    "name": "zeromem_forget_session",
+    "description": (
+        "Permanently delete one past session from memory: its turns, derived "
+        "graph state, and cached embeddings. Irreversible; only on explicit "
+        "user request."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": {"type": "string", "description": "Session to delete"},
+        },
+        "required": ["session_id"],
+    },
+}
+
 
 def _format_evidence(evidence: List[Dict[str, Any]]) -> str:
     lines = []
@@ -162,7 +178,10 @@ class ZeroMemProvider(MemoryProvider):
             self._writes.put((sid, "assistant", assistant_content))
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return [_RECALL_SCHEMA, _STATS_SCHEMA]
+        schemas = [_RECALL_SCHEMA, _STATS_SCHEMA]
+        if not self._read_only:
+            schemas.append(_FORGET_SCHEMA)
+        return schemas
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._mem:
@@ -175,6 +194,15 @@ class ZeroMemProvider(MemoryProvider):
             if tool_name == "zeromem_stats":
                 with self._lock:
                     return json.dumps(self._mem.stats())
+            if tool_name == "zeromem_forget_session":
+                if self._read_only:
+                    return json.dumps({"error": "memory is read-only in this context"})
+                sid = args["session_id"]
+                if sid == self._session_id:
+                    return json.dumps({"error": "refusing to delete the active session"})
+                with self._lock:
+                    removed = self._mem.delete_session(sid)
+                return json.dumps({"session_id": sid, "deleted_turns": removed})
         except Exception as exc:
             logger.exception("zeromem: tool %s failed", tool_name)
             return json.dumps({"error": str(exc)})

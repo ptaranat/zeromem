@@ -45,7 +45,17 @@ def main() -> None:
     assert "session-a" in block, block
 
     schemas = provider.get_tool_schemas()
-    assert {s["name"] for s in schemas} == {"zeromem_recall", "zeromem_stats"}
+    assert {s["name"] for s in schemas} == {"zeromem_recall", "zeromem_stats", "zeromem_forget_session"}
+
+    refused = json.loads(provider.handle_tool_call("zeromem_forget_session", {"session_id": "session-b"}))
+    assert "error" in refused, refused
+
+    gone = json.loads(provider.handle_tool_call("zeromem_forget_session", {"session_id": "session-a"}))
+    assert gone["deleted_turns"] == 4, gone
+    out = json.loads(provider.handle_tool_call("zeromem_recall", {"query": "What breed is Lychee?"}))
+    assert not out["evidence"], out["evidence"]
+    stats = json.loads(provider.handle_tool_call("zeromem_stats", {}))
+    assert stats["turns"] == 0, stats
 
     provider.shutdown()
     print("smoke ok:", json.dumps(stats))
