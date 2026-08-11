@@ -55,6 +55,8 @@ fn re(pattern: &str) -> Regex {
 }
 
 struct Patterns {
+    fence: Regex,
+    inline_code: Regex,
     url: Regex,
     email: Regex,
     iso_date: Regex,
@@ -69,6 +71,8 @@ struct Patterns {
 fn patterns() -> &'static Patterns {
     static P: OnceLock<Patterns> = OnceLock::new();
     P.get_or_init(|| Patterns {
+        fence: re(r"(?s)```.*?```"),
+        inline_code: re(r"`[^`\n]+`"),
         url: re(r"https?://\S+"),
         email: re(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
         iso_date: re(r"\b\d{4}-\d{2}-\d{2}\b"),
@@ -79,6 +83,26 @@ fn patterns() -> &'static Patterns {
         number: re(r"[$€£]?\b\d+(?:[,.]\d+)*%?"),
         quote: re(r#""([^"]{2,120})""#),
     })
+}
+
+/// Code carries no named entities; masking it keeps shell flags, JSON
+/// fragments, and score-like numbers out of the graph.
+fn mask_code(text: &str, p: &Patterns) -> String {
+    let no_fences = p.fence.replace_all(text, " ");
+    p.inline_code.replace_all(&no_fences, " ").into_owned()
+}
+
+/// Quoted shell or JSON fragments that the quote pattern would otherwise
+/// promote to entities.
+fn is_code_like(s: &str) -> bool {
+    s.starts_with('-')
+        || s.contains("&&")
+        || s.contains("$(")
+        || s.contains('`')
+        || s.contains('{')
+        || s.contains('}')
+        || s.contains('\\')
+        || s.contains("--")
 }
 
 /// Capitalized at sentence start but rarely an entity.
@@ -156,6 +180,7 @@ impl HeuristicNer {
 impl EntityExtractor for HeuristicNer {
     fn extract(&self, text: &str) -> Vec<Entity> {
         let p = patterns();
+        let text = &mask_code(text, p);
         let mut out = Vec::new();
         let mut masked = text.to_string();
 
@@ -189,7 +214,10 @@ impl EntityExtractor for HeuristicNer {
             }
         }
         for c in p.quote.captures_iter(text) {
-            out.push(Entity::new(&c[1], EntityKind::Quote));
+            let q = &c[1];
+            if q.chars().any(char::is_alphabetic) && !is_code_like(q) {
+                out.push(Entity::new(q, EntityKind::Quote));
+            }
         }
         for sentence in split_sentences(&masked) {
             self.capitalized_spans(sentence, &mut out);
@@ -227,6 +255,30 @@ mod tests {
     fn sentence_start_stopword_not_entity() {
         let c = canons("Yesterday was rough.");
         assert!(!c.contains(&"yesterday".to_string()), "{c:?}");
+    }
+
+    #[test]
+    fn inline_code_is_masked() {
+        let c = canons("run `curl -s -w '%{http_code}' -H Auth` and report");
+        assert!(c.is_empty(), "{c:?}");
+    }
+
+    #[test]
+    fn fenced_code_is_masked() {
+        let c = canons("look:\n```\nSELECT * FROM Turns WHERE id = 103;\n```\nthanks");
+        assert!(c.is_empty(), "{c:?}");
+    }
+
+    #[test]
+    fn code_like_quotes_dropped() {
+        let c = canons(r#"it failed with "&& echo $(date)" and "-d '{" again"#);
+        assert!(c.is_empty(), "{c:?}");
+    }
+
+    #[test]
+    fn prose_quotes_kept() {
+        let ents = HeuristicNer.extract(r#"she wrote "back at the shop by noon" on the door"#);
+        assert!(ents.iter().any(|e| e.kind == EntityKind::Quote), "{ents:?}");
     }
 
     #[test]
