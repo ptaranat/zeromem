@@ -57,6 +57,11 @@ def main() -> None:
     stats = json.loads(provider.handle_tool_call("zeromem_stats", {}))
     assert stats["turns"] == 0, stats
 
+    provider.sync_turn("stale write", "stale reply", session_id="session-a")
+    time.sleep(0.3)
+    stats = json.loads(provider.handle_tool_call("zeromem_stats", {}))
+    assert stats["turns"] == 0, f"forgotten session resurrected: {stats}"
+
     provider.shutdown()
     print("smoke ok:", json.dumps(stats))
 

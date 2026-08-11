@@ -80,6 +80,7 @@ class ZeroMemProvider(MemoryProvider):
         self._read_only = False
         self._config: Dict[str, Any] = {}
         self._prefetched: Dict[str, str] = {}
+        self._forgotten: set = set()
         self._writes: "queue.Queue[Optional[tuple]]" = queue.Queue()
         self._writer: Optional[threading.Thread] = None
         self._lock = threading.Lock()
@@ -128,6 +129,10 @@ class ZeroMemProvider(MemoryProvider):
             session_id, speaker, text = item
             try:
                 with self._lock:
+                    # a write dequeued before its session was forgotten must
+                    # not resurrect it
+                    if session_id in self._forgotten:
+                        continue
                     self._mem.ingest_turn(session_id, speaker, text, int(time.time()))
             except Exception:
                 logger.exception("zeromem: ingest failed")
@@ -203,6 +208,7 @@ class ZeroMemProvider(MemoryProvider):
                 if sid == self._session_id:
                     return json.dumps({"error": "refusing to delete the active session"})
                 with self._lock:
+                    self._forgotten.add(sid)
                     removed = self._mem.delete_session(sid)
                 return json.dumps({"session_id": sid, "deleted_turns": removed})
         except Exception as exc:
@@ -213,6 +219,7 @@ class ZeroMemProvider(MemoryProvider):
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "", reset: bool = False,
                           rewound: bool = False, **kwargs) -> None:
         self._session_id = new_session_id
+        self._forgotten.discard(new_session_id)
         self._prefetched.clear()
 
     def shutdown(self) -> None:

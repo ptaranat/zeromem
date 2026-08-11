@@ -139,9 +139,11 @@ impl ZeroMem {
     /// surviving turns, and drops embedding-cache rows nothing references
     /// anymore. Returns the number of turns removed.
     ///
-    /// The rebuild happens before the database is touched and rolls back on
-    /// failure, so an error leaves both memory and disk as they were. A
-    /// failure after the turn delete leaves at most unswept cache rows.
+    /// The rebuild runs before the turn delete and restores the previous
+    /// in-memory state if indexing fails, leaving the turns table untouched
+    /// (the rebuild may refresh embedding-cache rows, which is harmless). If
+    /// the turn delete itself fails, memory is ahead of disk until the next
+    /// open; a sweep failure leaves at most unswept cache rows.
     pub fn delete_session(&mut self, session_id: &str) -> Result<usize> {
         let (survivors, removed): (Vec<Turn>, Vec<Turn>) = self
             .store
