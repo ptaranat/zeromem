@@ -135,6 +135,63 @@ impl ZeroMem {
         Ok(turn.id)
     }
 
+    /// Deletes a session's turns, rebuilds the derived state from the
+    /// surviving turns, and drops embedding-cache rows nothing references
+    /// anymore. Returns the number of turns removed.
+    ///
+    /// The rebuild runs before the turn delete and restores the previous
+    /// in-memory state if indexing fails, leaving the turns table untouched
+    /// (the rebuild may refresh embedding-cache rows, which is harmless). If
+    /// the turn delete itself fails, memory is ahead of disk until the next
+    /// open; a sweep failure leaves at most unswept cache rows.
+    pub fn delete_session(&mut self, session_id: &str) -> Result<usize> {
+        let (survivors, removed): (Vec<Turn>, Vec<Turn>) = self
+            .store
+            .load_turns()?
+            .into_iter()
+            .partition(|t| t.session_id != session_id);
+        if removed.is_empty() {
+            return Ok(0);
+        }
+        self.rebuild_from(survivors)?;
+        self.store.delete_session_turns(session_id)?;
+        self.sweep_embedding_cache()?;
+        Ok(removed.len())
+    }
+
+    fn rebuild_from(&mut self, turns: Vec<Turn>) -> Result<()> {
+        let backup = (
+            std::mem::take(&mut self.turns),
+            std::mem::take(&mut self.turn_vecs),
+            std::mem::take(&mut self.entity_vecs),
+            std::mem::take(&mut self.graph),
+            std::mem::take(&mut self.hier),
+            std::mem::take(&mut self.bm25),
+            std::mem::take(&mut self.session_order),
+        );
+        let result = turns.into_iter().try_for_each(|t| self.index_turn(t));
+        if result.is_err() {
+            (
+                self.turns,
+                self.turn_vecs,
+                self.entity_vecs,
+                self.graph,
+                self.hier,
+                self.bm25,
+                self.session_order,
+            ) = backup;
+        }
+        result
+    }
+
+    /// Orphaned cache rows are never loaded (indexing only reads keys for
+    /// live turns and entities), so this reclaims space rather than fixing
+    /// retrieval; a crash mid-sweep leaves nothing worse than unswept rows.
+    fn sweep_embedding_cache(&mut self) -> Result<()> {
+        let live: Vec<&str> = self.graph.entities.iter().map(|e| e.canon.as_str()).collect();
+        self.store.sweep_orphan_embeddings(&live)
+    }
+
     fn index_turn(&mut self, turn: Turn) -> Result<()> {
         let idx = self.turns.len() as u32;
         let vec = self.embedding("turn", &turn.id.to_string(), &turn.text)?;
@@ -249,6 +306,31 @@ impl ZeroMem {
             episodes: self.hier.episodes.len(),
             embedder: self.embedder.id(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::embed::HashEmbedder;
+
+    #[test]
+    fn delete_session_cascades_to_cache() {
+        let mut zm =
+            ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        zm.ingest_turn("keep", "user", "Carrie adopted Lychee in Jersey City.", 1000).unwrap();
+        zm.ingest_turn("drop", "user", "Slowdive played the Fillmore with MBV.", 2000).unwrap();
+
+        assert_eq!(zm.delete_session("drop").unwrap(), 1);
+        assert_eq!(zm.stats().turns, 1);
+        assert_eq!(zm.stats().sessions, 1);
+
+        assert_eq!(zm.store.embedding_keys("turn").unwrap().len(), 1);
+        let entity_keys = zm.store.embedding_keys("entity").unwrap();
+        assert_eq!(entity_keys.len(), zm.graph.len(), "{entity_keys:?}");
+        assert!(!entity_keys.contains(&"slowdive".to_string()), "{entity_keys:?}");
+
+        assert_eq!(zm.delete_session("drop").unwrap(), 0);
     }
 }
 

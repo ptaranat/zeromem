@@ -1,8 +1,9 @@
 name: zeromem
-version: 0.1.0
+version: 0.2.0
 description: "Zero-token memory for Hermes: provenance-preserving retrieval over raw traces, no LLM calls in the memory path. Rust core, single SQLite file."
 author: Panat Taranat
 provides_tools:
   - zeromem_recall
   - zeromem_stats
+  - zeromem_forget_session
 dependencies: []

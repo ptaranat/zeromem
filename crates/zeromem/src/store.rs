@@ -126,6 +126,42 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_session_turns(&self, session_id: &str) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM turns WHERE session_id = ?1", [session_id])?)
+    }
+
+    pub fn embedding_keys(&self, kind: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT key FROM embeddings WHERE kind = ?1")?;
+        let rows = stmt.query_map([kind], |r| r.get(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Deletes cache rows for turns no longer in the turns table and for
+    /// entities absent from `live_entities`, in one transaction.
+    pub fn sweep_orphan_embeddings(&mut self, live_entities: &[&str]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM embeddings WHERE kind = 'turn'
+             AND key NOT IN (SELECT CAST(id AS TEXT) FROM turns)",
+            [],
+        )?;
+        tx.execute("CREATE TEMP TABLE live_entity (key TEXT PRIMARY KEY)", [])?;
+        {
+            let mut ins = tx.prepare("INSERT OR IGNORE INTO live_entity (key) VALUES (?1)")?;
+            for key in live_entities {
+                ins.execute([key])?;
+            }
+        }
+        tx.execute(
+            "DELETE FROM embeddings WHERE kind = 'entity'
+             AND key NOT IN (SELECT key FROM live_entity)",
+            [],
+        )?;
+        tx.execute("DROP TABLE live_entity", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn turn_count(&self) -> Result<i64> {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM turns", [], |r| r.get(0))?)
     }

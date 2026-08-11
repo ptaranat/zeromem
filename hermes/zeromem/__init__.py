@@ -48,6 +48,22 @@ _STATS_SCHEMA = {
     "parameters": {"type": "object", "properties": {}},
 }
 
+_FORGET_SCHEMA = {
+    "name": "zeromem_forget_session",
+    "description": (
+        "Permanently delete one past session from memory: its turns, derived "
+        "graph state, and cached embeddings. Irreversible; only on explicit "
+        "user request."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "session_id": {"type": "string", "description": "Session to delete"},
+        },
+        "required": ["session_id"],
+    },
+}
+
 
 def _format_evidence(evidence: List[Dict[str, Any]]) -> str:
     lines = []
@@ -64,6 +80,7 @@ class ZeroMemProvider(MemoryProvider):
         self._read_only = False
         self._config: Dict[str, Any] = {}
         self._prefetched: Dict[str, str] = {}
+        self._forgotten: set = set()
         self._writes: "queue.Queue[Optional[tuple]]" = queue.Queue()
         self._writer: Optional[threading.Thread] = None
         self._lock = threading.Lock()
@@ -112,6 +129,10 @@ class ZeroMemProvider(MemoryProvider):
             session_id, speaker, text = item
             try:
                 with self._lock:
+                    # a write dequeued before its session was forgotten must
+                    # not resurrect it
+                    if session_id in self._forgotten:
+                        continue
                     self._mem.ingest_turn(session_id, speaker, text, int(time.time()))
             except Exception:
                 logger.exception("zeromem: ingest failed")
@@ -162,7 +183,10 @@ class ZeroMemProvider(MemoryProvider):
             self._writes.put((sid, "assistant", assistant_content))
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return [_RECALL_SCHEMA, _STATS_SCHEMA]
+        schemas = [_RECALL_SCHEMA, _STATS_SCHEMA]
+        if not self._read_only:
+            schemas.append(_FORGET_SCHEMA)
+        return schemas
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         if not self._mem:
@@ -175,6 +199,18 @@ class ZeroMemProvider(MemoryProvider):
             if tool_name == "zeromem_stats":
                 with self._lock:
                     return json.dumps(self._mem.stats())
+            if tool_name == "zeromem_forget_session":
+                if self._read_only:
+                    return json.dumps({"error": "memory is read-only in this context"})
+                sid = args.get("session_id")
+                if not sid:
+                    return json.dumps({"error": "session_id is required"})
+                if sid == self._session_id:
+                    return json.dumps({"error": "refusing to delete the active session"})
+                with self._lock:
+                    removed = self._mem.delete_session(sid)
+                    self._forgotten.add(sid)
+                return json.dumps({"session_id": sid, "deleted_turns": removed})
         except Exception as exc:
             logger.exception("zeromem: tool %s failed", tool_name)
             return json.dumps({"error": str(exc)})
@@ -182,7 +218,9 @@ class ZeroMemProvider(MemoryProvider):
 
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "", reset: bool = False,
                           rewound: bool = False, **kwargs) -> None:
-        self._session_id = new_session_id
+        with self._lock:
+            self._session_id = new_session_id
+            self._forgotten.discard(new_session_id)
         self._prefetched.clear()
 
     def shutdown(self) -> None:
