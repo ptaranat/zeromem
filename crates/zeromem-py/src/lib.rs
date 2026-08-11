@@ -70,6 +70,12 @@ impl ZeroMem {
             .map_err(err)
     }
 
+    /// delete_session(session_id) -> number of turns removed. Cascades:
+    /// rebuilds derived state and sweeps unreferenced embedding-cache rows.
+    fn delete_session(&self, session_id: &str) -> PyResult<usize> {
+        self.inner.lock().unwrap().delete_session(session_id).map_err(err)
+    }
+
     /// query(text, top_k=None) -> {"route": ..., "evidence": [...]}
     #[pyo3(signature = (text, top_k = None))]
     fn query(&self, py: Python<'_>, text: &str, top_k: Option<usize>) -> PyResult<PyObject> {
