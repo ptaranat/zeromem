@@ -208,8 +208,8 @@ class ZeroMemProvider(MemoryProvider):
                 if sid == self._session_id:
                     return json.dumps({"error": "refusing to delete the active session"})
                 with self._lock:
-                    self._forgotten.add(sid)
                     removed = self._mem.delete_session(sid)
+                    self._forgotten.add(sid)
                 return json.dumps({"session_id": sid, "deleted_turns": removed})
         except Exception as exc:
             logger.exception("zeromem: tool %s failed", tool_name)
@@ -218,8 +218,9 @@ class ZeroMemProvider(MemoryProvider):
 
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "", reset: bool = False,
                           rewound: bool = False, **kwargs) -> None:
-        self._session_id = new_session_id
-        self._forgotten.discard(new_session_id)
+        with self._lock:
+            self._session_id = new_session_id
+            self._forgotten.discard(new_session_id)
         self._prefetched.clear()
 
     def shutdown(self) -> None:

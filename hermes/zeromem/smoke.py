@@ -58,7 +58,10 @@ def main() -> None:
     assert stats["turns"] == 0, stats
 
     provider.sync_turn("stale write", "stale reply", session_id="session-a")
-    time.sleep(0.3)
+    deadline = time.time() + 5
+    while not provider._writes.empty() and time.time() < deadline:
+        time.sleep(0.05)
+    time.sleep(0.05)
     stats = json.loads(provider.handle_tool_call("zeromem_stats", {}))
     assert stats["turns"] == 0, f"forgotten session resurrected: {stats}"
 
