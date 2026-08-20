@@ -6,6 +6,7 @@ commands:
   ingest <file.jsonl>   lines: {\"session_id\", \"speaker\", \"text\", \"ts\"?}
   query <text> [-k N]
   stats
+  mcp [--home PATH]     stdio MCP server for Claude Code (db at HOME/zeromem.db)
   hook                  Claude Code Stop/SessionEnd hook; reads event JSON on stdin
 ZEROMEM_HOME overrides the default ~/.zeromem home for mcp and hook.";
 
@@ -37,6 +38,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // mcp and hook manage their own store; no embedder up front
     match args.first().map(String::as_str).unwrap_or("") {
+        "mcp" => {
+            return Ok(zeromem::mcp::Server::new(home, !no_model).serve()?);
+        }
         "hook" => {
             let mut input = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;

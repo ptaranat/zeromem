@@ -16,6 +16,7 @@ pub mod hier_view;
 pub mod hierarchy;
 pub mod hook;
 pub mod lexical;
+pub mod mcp;
 pub mod ner;
 pub mod profile;
 pub mod route;
