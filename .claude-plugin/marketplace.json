@@ -1,0 +1,13 @@
+{
+  "name": "zeromem",
+  "owner": {
+    "name": "Panat Taranat"
+  },
+  "plugins": [
+    {
+      "name": "zeromem",
+      "source": "./claude/zeromem",
+      "description": "Zero-token memory across Claude Code sessions. Requires the zm binary on PATH (cargo install --path crates/zeromem)."
+    }
+  ]
+}

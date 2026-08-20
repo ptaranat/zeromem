@@ -5,7 +5,10 @@ const USAGE: &str = "usage: zm [--db PATH] [--no-model] <command>
 commands:
   ingest <file.jsonl>   lines: {\"session_id\", \"speaker\", \"text\", \"ts\"?}
   query <text> [-k N]
-  stats";
+  stats
+  mcp [--home PATH]     stdio MCP server for Claude Code (db at HOME/zeromem.db)
+  hook                  Claude Code Stop/SessionEnd hook; reads event JSON on stdin
+ZEROMEM_HOME overrides the default ~/.zeromem home for mcp and hook.";
 
 fn main() {
     if let Err(e) = run() {
@@ -21,12 +24,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(i) = args.iter().position(|a| a == "--db") {
         args.remove(i);
+        if i >= args.len() {
+            return Err(USAGE.into());
+        }
         db = PathBuf::from(args.remove(i));
     }
     if let Some(i) = args.iter().position(|a| a == "--no-model") {
         args.remove(i);
         no_model = true;
     }
+    let mut home = zeromem::spool::default_home();
+    if let Some(i) = args.iter().position(|a| a == "--home") {
+        args.remove(i);
+        if i >= args.len() {
+            return Err(USAGE.into());
+        }
+        home = PathBuf::from(args.remove(i));
+    }
+
+    // mcp and hook manage their own store; no embedder up front
+    match args.first().map(String::as_str).unwrap_or("") {
+        "mcp" => {
+            return Ok(zeromem::mcp::Server::new(home, !no_model).serve()?);
+        }
+        "hook" => {
+            let mut input = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
+            // a memory hiccup must not fail the user's session: log and exit 0
+            if let Err(e) = zeromem::hook::run(&home, &input) {
+                eprintln!("zm hook: {e}");
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let embedder = if no_model {
         Box::new(HashEmbedder::default()) as Box<dyn zeromem::embed::Embedder>
     } else {
