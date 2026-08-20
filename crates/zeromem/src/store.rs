@@ -52,7 +52,16 @@ impl Store {
             .prepare("SELECT 1 FROM pragma_table_info('turns') WHERE name = 'source_uuid'")?
             .exists([])?;
         if !has_source_uuid {
-            conn.execute("ALTER TABLE turns ADD COLUMN source_uuid TEXT", [])?;
+            // two processes can race this migration on first open of an old
+            // DB; losing the race is fine as long as the column exists
+            if let Err(err) = conn.execute("ALTER TABLE turns ADD COLUMN source_uuid TEXT", []) {
+                let present = conn
+                    .prepare("SELECT 1 FROM pragma_table_info('turns') WHERE name = 'source_uuid'")?
+                    .exists([])?;
+                if !present {
+                    return Err(err.into());
+                }
+            }
         }
         conn.execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS turns_source_uuid
