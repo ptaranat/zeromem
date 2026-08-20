@@ -95,7 +95,13 @@ pub fn drain(home: &Path, zm: &mut ZeroMem) -> Result<usize> {
         let claimed = if path.extension().is_some_and(|e| e == "jsonl") {
             let target = path.with_extension(format!("jsonl.claim-{}", std::process::id()));
             match std::fs::rename(&path, &target) {
-                Ok(()) => target,
+                Ok(()) => {
+                    // rename keeps the spool file's mtime, so staleness would
+                    // measure event age, not claim age: an old backlog file
+                    // would look stale the instant it was claimed
+                    touch(&target);
+                    target
+                }
                 // another server claimed it between readdir and rename
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(err) => return Err(err.into()),
@@ -103,7 +109,12 @@ pub fn drain(home: &Path, zm: &mut ZeroMem) -> Result<usize> {
         } else {
             path // adopted stale claim, already renamed once
         };
-        let body = std::fs::read_to_string(&claimed)?;
+        // an adopted claim can vanish if its slow owner finishes after all
+        let body = match std::fs::read_to_string(&claimed) {
+            Ok(b) => b,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
         for line in body.lines().filter(|l| !l.trim().is_empty()) {
             let Ok(t) = serde_json::from_str::<SpoolTurn>(line) else { continue };
             if t.text.trim().is_empty() {
@@ -113,9 +124,19 @@ pub fn drain(home: &Path, zm: &mut ZeroMem) -> Result<usize> {
                 added += 1;
             }
         }
-        std::fs::remove_file(&claimed)?;
+        match std::fs::remove_file(&claimed) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
     }
     Ok(added)
+}
+
+fn touch(path: &Path) {
+    if let Ok(f) = std::fs::File::options().append(true).open(path) {
+        let _ = f.set_modified(std::time::SystemTime::now());
+    }
 }
 
 fn claim_is_stale(path: &Path) -> bool {
