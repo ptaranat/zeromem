@@ -101,17 +101,31 @@ pub fn parse_iso8601(s: &str) -> Option<i64> {
     let (date, time) = s.split_once('T')?;
     let mut d = date.split('-');
     let (y, m, day) = (d.next()?.parse().ok()?, d.next()?.parse().ok()?, d.next()?.parse().ok()?);
-    if d.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&day) {
+    if d.next().is_some() || !(1..=12).contains(&m) || !(1..=days_in_month(y, m)).contains(&day) {
         return None;
     }
     let time = time.split_once('.').map_or(time, |(t, _)| t);
     let mut t = time.split(':');
     let (h, min, sec): (i64, i64, i64) =
         (t.next()?.parse().ok()?, t.next()?.parse().ok()?, t.next().unwrap_or("0").parse().ok()?);
-    if t.next().is_some() || h > 23 || min > 59 || sec > 60 {
+    if t.next().is_some() || h > 23 || min > 59 || sec > 59 {
         return None;
     }
     Some(days_from_civil(y, m, day) * 86400 + h * 3600 + min * 60 + sec)
+}
+
+fn days_in_month(y: i64, m: i64) -> i64 {
+    match m {
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 31,
+    }
 }
 
 /// Howard Hinnant's civil-days algorithm; days since 1970-01-01.
@@ -209,5 +223,9 @@ mod tests {
         assert_eq!(parse_iso8601("2022-02-14T00:00:00.500Z"), Some(1_644_796_800));
         assert_eq!(parse_iso8601("2022-02-14T00:00:00+02:00"), None);
         assert_eq!(parse_iso8601("garbage"), None);
+        assert_eq!(parse_iso8601("2022-02-31T00:00:00Z"), None);
+        assert_eq!(parse_iso8601("2024-02-29T00:00:00Z"), Some(1_709_164_800));
+        assert_eq!(parse_iso8601("2100-02-29T00:00:00Z"), None);
+        assert_eq!(parse_iso8601("2016-12-31T23:59:60Z"), None);
     }
 }
