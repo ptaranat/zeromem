@@ -16,7 +16,8 @@ JSONL
 printf '{"session_id":"cc-smoke","transcript_path":"%s","hook_event_name":"Stop"}' "$home/transcript.jsonl" \
   | ZEROMEM_HOME="$home" "$zm" hook
 
-[ -n "$(ls "$home/spool")" ] || { echo "ccsmoke: hook spooled nothing" >&2; exit 1; }
+set -- "$home/spool"/*.jsonl
+[ -e "$1" ] || { echo "ccsmoke: hook spooled nothing" >&2; exit 1; }
 
 out=$(
   {
@@ -32,6 +33,7 @@ echo "$out" | grep -q 'zeromem_recall'      || { echo "ccsmoke: recall tool not 
 echo "$out" | grep -q 'Fillmore'            || { echo "ccsmoke: recall returned no evidence" >&2; exit 1; }
 "$zm" --db "$home/zeromem.db" --no-model stats | grep -q '"turns": 2' \
                                             || { echo "ccsmoke: expected 2 turns in stats" >&2; exit 1; }
-[ -z "$(ls "$home/spool")" ]                || { echo "ccsmoke: spool not drained" >&2; exit 1; }
+set -- "$home/spool"/*
+[ ! -e "$1" ]                               || { echo "ccsmoke: spool not drained" >&2; exit 1; }
 
 echo "ccsmoke: ok"
