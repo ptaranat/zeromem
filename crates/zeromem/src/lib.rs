@@ -14,13 +14,16 @@ pub mod graph;
 pub mod graph_view;
 pub mod hier_view;
 pub mod hierarchy;
+pub mod hook;
 pub mod lexical;
 pub mod ner;
 pub mod profile;
 pub mod route;
+pub mod spool;
 pub mod store;
 pub mod text;
 pub mod trace;
+pub mod transcript;
 
 use crate::closure::{EvidenceRole, Selected};
 use crate::config::Config;
