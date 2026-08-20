@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "zeromem": {
+      "command": "zm",
+      "args": ["mcp"]
+    }
+  }
+}

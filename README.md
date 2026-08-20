@@ -95,6 +95,31 @@ The provider syncs turns in a background thread, prefetches evidence before
 each turn, and exposes `zeromem_recall` and `zeromem_stats` tools. Verify with
 `just pysmoke`.
 
+## Claude Code
+
+One shared store across every project, default `~/.zeromem` (override with
+`ZEROMEM_HOME`). A Stop/SessionEnd hook (`zm hook`) parses each session's
+transcript incrementally and spools clean turns without ever opening the DB;
+a stdio MCP server (`zm mcp`) holds the index open for the session, drains
+the spool before each call, and serves `zeromem_recall`, `zeromem_stats`,
+and `zeromem_forget_session`.
+
+```
+cargo install --path crates/zeromem     # zm on PATH
+claude plugin marketplace add ptaranat/zeromem
+claude plugin install zeromem@zeromem
+```
+
+Without the plugin: add the two hooks to `~/.claude/settings.json` (command
+`zm hook` on `Stop` and `SessionEnd`) and register the server with
+`claude mcp add --scope user zeromem -- zm mcp`. Verify with `just ccsmoke`.
+
+Caveats: Claude Code gives MCP servers no session identity, so recall can
+echo turns from the current session (the `exclude_session` argument exists
+for hosts that know theirs). Forgetting a session that is still open in
+another window partially resurrects it as that session keeps talking. There
+is no prompt-time prefetch; recall is tool-driven.
+
 ## Credits
 
 Method from the Zero-Mem paper by Yilin Xiao, Zhehan Zhu, Yujing Zhang, Jin

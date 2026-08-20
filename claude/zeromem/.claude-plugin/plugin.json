@@ -1,0 +1,8 @@
+{
+  "name": "zeromem",
+  "version": "0.3.0",
+  "description": "Zero-token memory across Claude Code sessions: provenance-preserving retrieval over raw turns, no LLM calls in the memory path.",
+  "author": {
+    "name": "Panat Taranat"
+  }
+}
