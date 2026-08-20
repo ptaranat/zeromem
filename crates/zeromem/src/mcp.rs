@@ -38,8 +38,10 @@ impl Server {
         Ok(())
     }
 
-    /// One request line in, one response line out; None for notifications
-    /// and unparseable input (JSON-RPC forbids replying to those).
+    /// One request line in, one response line out; None for notifications.
+    /// Unparseable input is dropped rather than answered with the spec's
+    /// id:null parse error: Claude Code never sends malformed lines, and
+    /// nothing on the far end of the pipe correlates a reply without an id.
     pub fn handle_line(&mut self, line: &str) -> Option<String> {
         let line = line.trim();
         if line.is_empty() {
