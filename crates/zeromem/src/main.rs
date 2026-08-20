@@ -24,6 +24,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(i) = args.iter().position(|a| a == "--db") {
         args.remove(i);
+        if i >= args.len() {
+            return Err(USAGE.into());
+        }
         db = PathBuf::from(args.remove(i));
     }
     if let Some(i) = args.iter().position(|a| a == "--no-model") {
@@ -33,6 +36,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut home = zeromem::spool::default_home();
     if let Some(i) = args.iter().position(|a| a == "--home") {
         args.remove(i);
+        if i >= args.len() {
+            return Err(USAGE.into());
+        }
         home = PathBuf::from(args.remove(i));
     }
 
