@@ -76,6 +76,10 @@ pub struct ZeroMem {
     hier: Hierarchy,
     bm25: Bm25,
     session_order: Vec<String>,
+    /// Store generation last seen. Bumped by any process that deletes a
+    /// session, so other open handles know to rebuild rather than only
+    /// load new turns.
+    generation: String,
 }
 
 impl ZeroMem {
@@ -98,6 +102,7 @@ impl ZeroMem {
             None => store.set_meta("embedder", &tag)?,
             _ => {}
         }
+        let generation = store.meta("generation")?.unwrap_or_default();
 
         let mut zm = Self {
             cfg,
@@ -111,6 +116,7 @@ impl ZeroMem {
             hier: Hierarchy::default(),
             bm25: Bm25::default(),
             session_order: Vec::new(),
+            generation,
         };
         for turn in zm.store.load_turns()? {
             zm.index_turn(turn)?;
@@ -119,20 +125,64 @@ impl ZeroMem {
     }
 
     pub fn ingest_turn(&mut self, session_id: &str, speaker: &str, text: &str, ts: i64) -> Result<i64> {
+        // Without a source uuid the insert cannot be a duplicate.
+        Ok(self.ingest(session_id, speaker, text, ts, None)?.expect("untagged insert"))
+    }
+
+    /// Like `ingest_turn`, but a turn whose `source_uuid` was already
+    /// ingested (by any process) is skipped and returns None.
+    pub fn ingest_turn_dedup(
+        &mut self,
+        session_id: &str,
+        speaker: &str,
+        text: &str,
+        ts: i64,
+        source_uuid: &str,
+    ) -> Result<Option<i64>> {
+        self.ingest(session_id, speaker, text, ts, Some(source_uuid))
+    }
+
+    fn ingest(
+        &mut self,
+        session_id: &str,
+        speaker: &str,
+        text: &str,
+        ts: i64,
+        source_uuid: Option<&str>,
+    ) -> Result<Option<i64>> {
         if text.trim().is_empty() {
             return Err(error::Error::Invalid("empty turn text".into()));
         }
-        let mut turn = Turn {
-            id: 0,
-            session_id: session_id.to_string(),
-            session_turn: self.store.next_session_turn(session_id)?,
-            speaker: speaker.to_string(),
-            text: text.to_string(),
-            ts,
-        };
-        turn.id = self.store.insert_turn(&turn)?;
-        self.index_turn(turn.clone())?;
-        Ok(turn.id)
+        match self.store.insert_turn(session_id, speaker, text, ts, source_uuid)? {
+            None => Ok(None),
+            Some(turn) => {
+                let id = turn.id;
+                self.index_turn(turn)?;
+                Ok(Some(id))
+            }
+        }
+    }
+
+    /// Picks up turns other processes wrote since open or the last refresh.
+    /// A generation change (some process deleted a session) forces a full
+    /// rebuild from the turns table; otherwise only new turns are indexed.
+    /// Returns the number of turns indexed by this call.
+    pub fn refresh(&mut self) -> Result<usize> {
+        let generation = self.store.meta("generation")?.unwrap_or_default();
+        if generation != self.generation {
+            let turns = self.store.load_turns()?;
+            let n = turns.len();
+            self.rebuild_from(turns)?;
+            self.generation = generation;
+            return Ok(n);
+        }
+        let last = self.turns.last().map_or(0, |t| t.id);
+        let fresh = self.store.load_turns_after(last)?;
+        let n = fresh.len();
+        for turn in fresh {
+            self.index_turn(turn)?;
+        }
+        Ok(n)
     }
 
     /// Deletes a session's turns, rebuilds the derived state from the
@@ -155,8 +205,23 @@ impl ZeroMem {
         }
         self.rebuild_from(survivors)?;
         self.store.delete_session_turns(session_id)?;
+        self.bump_generation()?;
         self.sweep_embedding_cache()?;
         Ok(removed.len())
+    }
+
+    /// Signals other open handles that incremental refresh is no longer
+    /// enough. The value is a process-unique token rather than a counter:
+    /// two processes incrementing the same counter concurrently could land
+    /// on the same value and hide each other's deletes.
+    fn bump_generation(&mut self) -> Result<()> {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let next = format!("{}-{}", std::process::id(), nanos);
+        self.store.set_meta("generation", &next)?;
+        self.generation = next;
+        Ok(())
     }
 
     fn rebuild_from(&mut self, turns: Vec<Turn>) -> Result<()> {
@@ -331,6 +396,59 @@ mod tests {
         assert!(!entity_keys.contains(&"slowdive".to_string()), "{entity_keys:?}");
 
         assert_eq!(zm.delete_session("drop").unwrap(), 0);
+    }
+
+    fn open_pair(name: &str) -> (ZeroMem, ZeroMem, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("zeromem-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("mem.db");
+        let a = ZeroMem::open(&path, Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        let b = ZeroMem::open(&path, Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        (a, b, dir)
+    }
+
+    #[test]
+    fn refresh_picks_up_concurrent_ingest() {
+        let (mut a, mut b, dir) = open_pair("refresh");
+        a.ingest_turn("s1", "user", "Carrie adopted Lychee in Jersey City.", 1000).unwrap();
+        assert_eq!(b.stats().turns, 0);
+        assert_eq!(b.refresh().unwrap(), 1);
+        assert_eq!(b.stats().turns, 1);
+        assert_eq!(b.refresh().unwrap(), 0);
+
+        // both sides ingest; each catches up to the other
+        b.ingest_turn("s2", "user", "Slowdive played the Fillmore.", 2000).unwrap();
+        assert_eq!(a.refresh().unwrap(), 1);
+        assert_eq!(a.stats().sessions, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refresh_rebuilds_after_foreign_delete() {
+        let (mut a, mut b, dir) = open_pair("gen");
+        a.ingest_turn("keep", "user", "Carrie runs the register.", 1000).unwrap();
+        a.ingest_turn("drop", "user", "Slowdive played the Fillmore.", 2000).unwrap();
+        b.refresh().unwrap();
+        assert_eq!(b.stats().turns, 2);
+
+        a.delete_session("drop").unwrap();
+        // a stays on the fast path for its own delete
+        assert_eq!(a.refresh().unwrap(), 0);
+        assert_eq!(a.stats().turns, 1);
+        // b sees the generation change and rebuilds
+        b.refresh().unwrap();
+        assert_eq!(b.stats().turns, 1);
+        assert_eq!(b.stats().sessions, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dedup_ingest_skips_seen_uuid() {
+        let mut zm =
+            ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        assert!(zm.ingest_turn_dedup("s1", "user", "hello", 1000, "u-1").unwrap().is_some());
+        assert!(zm.ingest_turn_dedup("s1", "user", "hello", 1000, "u-1").unwrap().is_none());
+        assert_eq!(zm.stats().turns, 1);
     }
 }
 

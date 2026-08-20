@@ -27,6 +27,7 @@ impl Store {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
+             PRAGMA busy_timeout = 5000;
              CREATE TABLE IF NOT EXISTS turns (
                  id INTEGER PRIMARY KEY,
                  session_id TEXT NOT NULL,
@@ -46,6 +47,16 @@ impl Store {
                  key TEXT PRIMARY KEY,
                  value TEXT NOT NULL
              );",
+        )?;
+        let has_source_uuid = conn
+            .prepare("SELECT 1 FROM pragma_table_info('turns') WHERE name = 'source_uuid'")?
+            .exists([])?;
+        if !has_source_uuid {
+            conn.execute("ALTER TABLE turns ADD COLUMN source_uuid TEXT", [])?;
+        }
+        conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS turns_source_uuid
+             ON turns(source_uuid) WHERE source_uuid IS NOT NULL;",
         )?;
         Ok(Self { conn })
     }
@@ -67,10 +78,17 @@ impl Store {
     }
 
     pub fn load_turns(&self) -> Result<Vec<Turn>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, session_id, session_turn, speaker, text, ts FROM turns ORDER BY id")?;
-        let rows = stmt.query_map([], |r| {
+        self.load_turns_after(0)
+    }
+
+    /// Turns with id greater than `id`, in id order. Ids start at 1, so 0
+    /// loads everything.
+    pub fn load_turns_after(&self, id: i64) -> Result<Vec<Turn>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, session_turn, speaker, text, ts FROM turns
+             WHERE id > ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map([id], |r| {
             Ok(Turn {
                 id: r.get(0)?,
                 session_id: r.get(1)?,
@@ -83,21 +101,39 @@ impl Store {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
-    pub fn next_session_turn(&self, session_id: &str) -> Result<i64> {
-        let max: Option<i64> = self.conn.query_row(
-            "SELECT MAX(session_turn) FROM turns WHERE session_id = ?1",
-            [session_id],
-            |r| r.get(0),
+    /// Inserts a turn, assigning session_turn inside the statement so
+    /// concurrent writers cannot race to the same position. A duplicate
+    /// source_uuid is ignored and returns None.
+    pub fn insert_turn(
+        &self,
+        session_id: &str,
+        speaker: &str,
+        text: &str,
+        ts: i64,
+        source_uuid: Option<&str>,
+    ) -> Result<Option<Turn>> {
+        let inserted = self.conn.execute(
+            "INSERT OR IGNORE INTO turns (session_id, session_turn, speaker, text, ts, source_uuid)
+             SELECT ?1,
+                    COALESCE((SELECT MAX(session_turn) + 1 FROM turns WHERE session_id = ?1), 0),
+                    ?2, ?3, ?4, ?5",
+            params![session_id, speaker, text, ts, source_uuid],
         )?;
-        Ok(max.map_or(0, |m| m + 1))
-    }
-
-    pub fn insert_turn(&self, t: &Turn) -> Result<i64> {
-        self.conn.execute(
-            "INSERT INTO turns (session_id, session_turn, speaker, text, ts) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![t.session_id, t.session_turn, t.speaker, t.text, t.ts],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        if inserted == 0 {
+            return Ok(None);
+        }
+        let id = self.conn.last_insert_rowid();
+        let session_turn =
+            self.conn
+                .query_row("SELECT session_turn FROM turns WHERE id = ?1", [id], |r| r.get(0))?;
+        Ok(Some(Turn {
+            id,
+            session_id: session_id.to_string(),
+            session_turn,
+            speaker: speaker.to_string(),
+            text: text.to_string(),
+            ts,
+        }))
     }
 
     pub fn embedding(&self, kind: &str, key: &str) -> Result<Option<Vec<f32>>> {
@@ -182,21 +218,64 @@ mod tests {
     #[test]
     fn roundtrip_turn_and_embedding() {
         let s = Store::open_in_memory().unwrap();
-        let t = Turn {
-            id: 0,
-            session_id: "s1".into(),
-            session_turn: 0,
-            speaker: "user".into(),
-            text: "hello".into(),
-            ts: 1000,
-        };
-        let id = s.insert_turn(&t).unwrap();
-        assert_eq!(id, 1);
-        assert_eq!(s.next_session_turn("s1").unwrap(), 1);
-        assert_eq!(s.next_session_turn("s2").unwrap(), 0);
+        let t = s.insert_turn("s1", "user", "hello", 1000, None).unwrap().unwrap();
+        assert_eq!(t.id, 1);
+        assert_eq!(t.session_turn, 0);
+        let t2 = s.insert_turn("s1", "user", "again", 1001, None).unwrap().unwrap();
+        assert_eq!(t2.session_turn, 1);
+        assert_eq!(s.insert_turn("s2", "user", "other", 1002, None).unwrap().unwrap().session_turn, 0);
 
         s.put_embedding("turn", "1", &[0.5, -1.0]).unwrap();
         assert_eq!(s.embedding("turn", "1").unwrap().unwrap(), vec![0.5, -1.0]);
-        assert!(s.embedding("turn", "2").unwrap().is_none());
+        assert!(s.embedding("turn", "9").unwrap().is_none());
+    }
+
+    #[test]
+    fn source_uuid_dedups() {
+        let s = Store::open_in_memory().unwrap();
+        assert!(s.insert_turn("s1", "user", "hello", 1000, Some("u-1")).unwrap().is_some());
+        assert!(s.insert_turn("s1", "user", "hello", 1000, Some("u-1")).unwrap().is_none());
+        // untagged inserts never collide
+        assert!(s.insert_turn("s1", "user", "hello", 1000, None).unwrap().is_some());
+        assert!(s.insert_turn("s1", "user", "hello", 1000, None).unwrap().is_some());
+        assert_eq!(s.turn_count().unwrap(), 3);
+    }
+
+    #[test]
+    fn load_turns_after_skips_indexed() {
+        let s = Store::open_in_memory().unwrap();
+        s.insert_turn("s1", "user", "one", 1, None).unwrap();
+        s.insert_turn("s1", "user", "two", 2, None).unwrap();
+        assert_eq!(s.load_turns_after(0).unwrap().len(), 2);
+        assert_eq!(s.load_turns_after(1).unwrap().len(), 1);
+        assert_eq!(s.load_turns_after(2).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn migrates_pre_uuid_schema() {
+        let dir = std::env::temp_dir().join(format!("zeromem-store-mig-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE turns (
+                     id INTEGER PRIMARY KEY,
+                     session_id TEXT NOT NULL,
+                     session_turn INTEGER NOT NULL,
+                     speaker TEXT NOT NULL,
+                     text TEXT NOT NULL,
+                     ts INTEGER NOT NULL
+                 );
+                 INSERT INTO turns (session_id, session_turn, speaker, text, ts)
+                 VALUES ('s1', 0, 'user', 'legacy', 1000);",
+            )
+            .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.load_turns().unwrap().len(), 1);
+        assert!(s.insert_turn("s1", "user", "new", 2000, Some("u-1")).unwrap().is_some());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
