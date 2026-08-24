@@ -19,6 +19,9 @@ pub struct Server {
     home: PathBuf,
     use_model: bool,
     zm: Option<ZeroMem>,
+    /// Set at startup when the embedder is the lexical fallback; consumed by
+    /// the first recall, which then appends a warning to its result.
+    warn_on_fallback: bool,
 }
 
 impl Server {
@@ -27,6 +30,7 @@ impl Server {
             home,
             use_model,
             zm: None,
+            warn_on_fallback: true,
         }
     }
 
@@ -104,7 +108,19 @@ impl Server {
                 let exclude = args["exclude_session"].as_str();
                 zm.exclude_session(exclude);
                 let result = zm.query(query, top_k)?;
-                Ok(serde_json::to_value(&result).expect("query result serializes"))
+                let mut value = serde_json::to_value(&result).expect("query result serializes");
+                if self.warn_on_fallback {
+                    self.warn_on_fallback = false;
+                    let note = json!({
+                        "note": "zeromem is running on the hash fallback embedder \
+                                 (lexical similarity only). Recall quality is lower; \
+                                 build with the fastembed feature for bge-small-en-v1.5."
+                    });
+                    if let Some(obj) = value.as_object_mut() {
+                        obj.insert("warning".into(), note);
+                    }
+                }
+                Ok(value)
             }
             "zeromem_stats" => Ok(serde_json::to_value(zm.stats()).expect("stats serialize")),
             "zeromem_forget_session" => {
@@ -128,6 +144,7 @@ impl Server {
             } else {
                 Box::new(crate::embed::HashEmbedder::default()) as Box<dyn crate::embed::Embedder>
             };
+            self.warn_on_fallback = embedder.is_fallback();
             self.zm = Some(ZeroMem::open(&db, Config::default(), embedder)?);
         }
         Ok(self.zm.as_mut().expect("just opened"))
@@ -188,6 +205,44 @@ mod tests {
     fn call(server: &mut Server, id: u64, method: &str, params: Value) -> Value {
         let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
         serde_json::from_str(&server.handle_line(&req.to_string()).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn fallback_warning_fires_once() {
+        let home = temp_home("warn");
+        spool::append_event(
+            &home,
+            &[SpoolTurn {
+                session_id: "s1".into(),
+                speaker: "user".into(),
+                text: "Carrie runs the register.".into(),
+                ts: 1000,
+                uuid: "u1".into(),
+            }],
+        )
+        .unwrap();
+        let mut s = Server::new(home.clone(), false);
+        for (i, want) in [true, false].into_iter().enumerate() {
+            let resp = call(
+                &mut s,
+                i as u64,
+                "tools/call",
+                json!({"name": "zeromem_recall", "arguments": {"query": "register"}}),
+            );
+            let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+            assert_eq!(text.contains("fallback embedder"), want, "call {i}: {text}");
+        }
+        let stats = call(
+            &mut s,
+            9,
+            "tools/call",
+            json!({"name": "zeromem_stats", "arguments": {}}),
+        );
+        assert!(stats["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"embedder_is_fallback\": true"));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

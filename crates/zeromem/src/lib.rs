@@ -66,6 +66,8 @@ pub struct Stats {
     pub windows: usize,
     pub episodes: usize,
     pub embedder: String,
+    /// True when running the lexical-only fallback embedder.
+    pub embedder_is_fallback: bool,
 }
 
 pub struct ZeroMem {
@@ -432,6 +434,7 @@ impl ZeroMem {
             windows: self.hier.windows.len(),
             episodes: self.hier.episodes.len(),
             embedder: self.embedder.id(),
+            embedder_is_fallback: self.embedder.is_fallback(),
         }
     }
 }
