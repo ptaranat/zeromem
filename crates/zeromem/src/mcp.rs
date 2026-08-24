@@ -19,11 +19,14 @@ pub struct Server {
     home: PathBuf,
     use_model: bool,
     zm: Option<ZeroMem>,
+    /// One-time notice appended to the first recall result when running on
+    /// the hash fallback embedder, so silent quality loss is visible.
+    warned_fallback: bool,
 }
 
 impl Server {
     pub fn new(home: PathBuf, use_model: bool) -> Self {
-        Self { home, use_model, zm: None }
+        Self { home, use_model, zm: None, warned_fallback: false }
     }
 
     pub fn serve(&mut self) -> std::io::Result<()> {
@@ -100,7 +103,20 @@ impl Server {
                     zm.exclude_session(sid);
                 }
                 let result = zm.query(query, top_k)?;
-                Ok(serde_json::to_value(&result).expect("query result serializes"))            }
+                let mut value =
+                    serde_json::to_value(&result).expect("query result serializes");
+                if !self.warned_fallback && self.open()?.stats().embedder_is_fallback {
+                    self.warned_fallback = true;
+                    let note = json!({
+                        "note": "zeromem is running on the hash fallback embedder \
+                                 (lexical similarity only). Recall quality is lower; \
+                                 build with the fastembed feature for bge-small-en-v1.5."
+                    });
+                    if let Some(obj) = value.as_object_mut() {
+                        obj.insert("warning".into(), note);
+                    }
+                }
+                Ok(value)            }
             "zeromem_stats" => Ok(serde_json::to_value(zm.stats()).expect("stats serialize")),
             "zeromem_forget_session" => {
                 let sid = args["session_id"]
