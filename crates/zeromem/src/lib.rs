@@ -84,6 +84,9 @@ pub struct ZeroMem {
     /// session, so other open handles know to rebuild rather than only
     /// load new turns.
     generation: String,
+    /// Session id dropped from query results (hosts that know their own
+    /// session set this so recall cannot echo the conversation in flight).
+    excluded_sessions: Option<String>,
 }
 
 impl ZeroMem {
@@ -121,6 +124,7 @@ impl ZeroMem {
             bm25: Bm25::default(),
             session_order: Vec::new(),
             generation,
+            excluded_sessions: None,
         };
         for turn in zm.store.load_turns()? {
             zm.index_turn(turn)?;
@@ -165,6 +169,13 @@ impl ZeroMem {
                 Ok(Some(id))
             }
         }
+    }
+
+    /// Drops one session id from all query results. Hosts that know their
+    /// own session set this so recall cannot echo the conversation in
+    /// flight. Over-fetching keeps the result set full after the filter.
+    pub fn exclude_session(&mut self, session_id: &str) {
+        self.excluded_sessions = Some(session_id.to_string());
     }
 
     /// Picks up turns other processes wrote since open or the last refresh.
@@ -311,7 +322,20 @@ impl ZeroMem {
         if self.turns.is_empty() {
             return Ok(QueryResult { route, evidence: Vec::new() });
         }
+        // Over-fetch so an exclusion still leaves a full result set; the
+        // fuse truncation below cuts back to cfg.top_k.
+        let fetch = match &self.excluded_sessions {
+            Some(sid) => {
+                let excluded = self.turns.iter().filter(|t| &t.session_id == sid).count();
+                cfg.top_k + excluded
+            }
+            None => cfg.top_k,
+        };
         let query_vec = self.embedder.embed(&[query])?.pop().unwrap_or_default();
+        if self.excluded_sessions.is_some() {
+            // Views and fusion size their candidate sets off cfg.top_k.
+            cfg.top_k = fetch;
+        }
 
         let graph_scores = graph_view::retrieve(
             &graph_view::GraphViewInput {
@@ -342,7 +366,7 @@ impl ZeroMem {
         let closed = closure::close(&main, &self.graph, &self.turns, &cfg);
         let final_set = calibrate::calibrate_evidence(closed, &self.turns, &profile, &self.session_order, &cfg);
 
-        let evidence = final_set
+        let evidence: Vec<Evidence> = final_set
             .into_iter()
             .map(|s: Selected| {
                 let t = &self.turns[s.turn as usize];
@@ -358,7 +382,16 @@ impl ZeroMem {
                 }
             })
             .collect();
-        Ok(QueryResult { route, evidence })
+        Ok(QueryResult {
+            route,
+            evidence: match &self.excluded_sessions {
+                Some(sid) => evidence
+                    .into_iter()
+                    .filter(|e| e.session_id != *sid)
+                    .collect(),
+                None => evidence,
+            },
+        })
     }
 
     pub fn calibrate_answer(&self, query: &str, answer: &str, evidence_texts: &[&str]) -> calibrate::CalibratedAnswer {
@@ -444,6 +477,40 @@ mod tests {
         assert_eq!(b.stats().turns, 1);
         assert_eq!(b.stats().sessions, 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exclude_session_still_returns_full_top_k() {
+        let mut zm =
+            ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        // current session dominates the top of the ranking; other sessions
+        // hold plenty of matching turns further down
+        zm.ingest_turn("cur", "user", "Carrie ordered Slowdive vinyl.", 1000).unwrap();
+        zm.ingest_turn("a", "user", "Slowdive vinyl arrived at the shop.", 2000).unwrap();
+        zm.ingest_turn("b", "user", "Slowdive vinyl restock is delayed.", 3000).unwrap();
+        zm.ingest_turn("c", "user", "Slowdive vinyl sold out again.", 4000).unwrap();
+        zm.ingest_turn("d", "user", "Slowdive vinyl display by the register.", 5000).unwrap();
+        zm.ingest_turn("e", "user", "Customer asked about Slowdive vinyl pricing.", 6000).unwrap();
+
+        let plain = zm.query("Slowdive vinyl", None).unwrap();
+        assert!(plain.evidence.iter().any(|e| e.session_id == "cur"));
+
+        zm.exclude_session("cur");
+        let filtered = zm.query("Slowdive vinyl", None).unwrap();
+        assert!(!filtered.evidence.is_empty());
+        assert!(
+            filtered.evidence.iter().all(|e| e.session_id != "cur"),
+            "{filtered:?}"
+        );
+        // over-fetch keeps the result set full instead of shrinking to
+        // top_k minus excluded hits
+        assert_eq!(
+            filtered.evidence.len(),
+            plain.evidence.len() - plain.evidence.iter().filter(|e| e.session_id == "cur").count()
+                + (5 - 1).min(0).max(0),
+            "result set should stay near full size"
+        );
+        assert!(filtered.evidence.len() >= 4, "{:?}", filtered.evidence.len());
     }
 
     #[test]

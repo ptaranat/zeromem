@@ -96,12 +96,11 @@ impl Server {
                     .ok_or_else(|| crate::error::Error::Invalid("query is required".into()))?;
                 let top_k = args["top_k"].as_u64().map(|k| k as usize);
                 let exclude = args["exclude_session"].as_str();
-                let mut result = zm.query(query, top_k)?;
                 if let Some(sid) = exclude {
-                    result.evidence.retain(|e| e.session_id != sid);
+                    zm.exclude_session(sid);
                 }
-                Ok(serde_json::to_value(&result).expect("query result serializes"))
-            }
+                let result = zm.query(query, top_k)?;
+                Ok(serde_json::to_value(&result).expect("query result serializes"))            }
             "zeromem_stats" => Ok(serde_json::to_value(zm.stats()).expect("stats serialize")),
             "zeromem_forget_session" => {
                 let sid = args["session_id"]
