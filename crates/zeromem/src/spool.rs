@@ -116,11 +116,16 @@ pub fn drain(home: &Path, zm: &mut ZeroMem) -> Result<usize> {
             Err(err) => return Err(err.into()),
         };
         for line in body.lines().filter(|l| !l.trim().is_empty()) {
-            let Ok(t) = serde_json::from_str::<SpoolTurn>(line) else { continue };
+            let Ok(t) = serde_json::from_str::<SpoolTurn>(line) else {
+                continue;
+            };
             if t.text.trim().is_empty() {
                 continue;
             }
-            if zm.ingest_turn_dedup(&t.session_id, &t.speaker, &t.text, t.ts, &t.uuid)?.is_some() {
+            if zm
+                .ingest_turn_dedup(&t.session_id, &t.speaker, &t.text, t.ts, &t.uuid)?
+                .is_some()
+            {
                 added += 1;
             }
         }
@@ -175,8 +180,14 @@ mod tests {
         let home = temp_home("basic");
         let mut zm =
             ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
-        append_event(&home, &[turn("u1", "Carrie runs the register."), turn("u2", "Lychee naps.")])
-            .unwrap();
+        append_event(
+            &home,
+            &[
+                turn("u1", "Carrie runs the register."),
+                turn("u2", "Lychee naps."),
+            ],
+        )
+        .unwrap();
         append_event(&home, &[turn("u3", "Slowdive played the Fillmore.")]).unwrap();
 
         assert_eq!(drain(&home, &mut zm).unwrap(), 3);
@@ -214,7 +225,8 @@ mod tests {
         assert!(claim.exists());
 
         // stale claim: that server is gone, adopt
-        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(STALE_CLAIM_SECS * 2);
+        let old =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(STALE_CLAIM_SECS * 2);
         let f = std::fs::File::options().append(true).open(&claim).unwrap();
         f.set_modified(old).unwrap();
         drop(f);

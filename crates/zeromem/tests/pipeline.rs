@@ -4,7 +4,8 @@ use zeromem::embed::HashEmbedder;
 use zeromem::ZeroMem;
 
 fn corpus() -> ZeroMem {
-    let mut zm = ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+    let mut zm =
+        ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
     let data = include_str!("../../../examples/dungeon-books.jsonl");
     for line in data.lines().filter(|l| !l.trim().is_empty()) {
         let v: serde_json::Value = serde_json::from_str(line).unwrap();
@@ -73,7 +74,12 @@ fn closure_attaches_supporting_context() {
 #[test]
 fn boundary_restricts_to_first_session() {
     let zm = corpus();
-    let result = zm.query("What did the shelving cost in the first conversation?", None).unwrap();
+    let result = zm
+        .query(
+            "What did the shelving cost in the first conversation?",
+            None,
+        )
+        .unwrap();
     for e in &result.evidence {
         assert_eq!(e.session_id, "s1", "boundary leak: {e:?}");
     }
@@ -101,7 +107,10 @@ fn answer_calibration_replaces_unsupported_date() {
     let all: Vec<&str> = result.evidence.iter().map(|e| e.text.as_str()).collect();
     let ambiguous = zm.calibrate_answer(q, "June 2021", &all);
     if ambiguous.candidates.len() > 1 {
-        assert!(!ambiguous.changed, "must not guess among candidates: {ambiguous:?}");
+        assert!(
+            !ambiguous.changed,
+            "must not guess among candidates: {ambiguous:?}"
+        );
     }
 }
 
@@ -111,8 +120,10 @@ fn persistence_roundtrip() {
     let _ = std::fs::remove_dir_all(&dir);
     let db = dir.join("t.db");
     {
-        let mut zm = ZeroMem::open(&db, Config::default(), Box::new(HashEmbedder::default())).unwrap();
-        zm.ingest_turn("s1", "user", "Rex the parrot says Copenhagen.", 100).unwrap();
+        let mut zm =
+            ZeroMem::open(&db, Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        zm.ingest_turn("s1", "user", "Rex the parrot says Copenhagen.", 100)
+            .unwrap();
     }
     {
         let zm = ZeroMem::open(&db, Config::default(), Box::new(HashEmbedder::default())).unwrap();
@@ -131,10 +142,17 @@ fn deleted_session_leaves_no_trace_in_retrieval() {
     assert!(removed > 0);
     assert_eq!(zm.stats().sessions, sessions_before - 1);
 
-    for q in ["What did the shelving cost?", "What breed is Lychee?", "When did I move to Jersey City?"] {
+    for q in [
+        "What did the shelving cost?",
+        "What breed is Lychee?",
+        "When did I move to Jersey City?",
+    ] {
         let result = zm.query(q, None).unwrap();
         for e in &result.evidence {
-            assert_ne!(e.session_id, "s1", "deleted session leaked for {q:?}: {e:?}");
+            assert_ne!(
+                e.session_id, "s1",
+                "deleted session leaked for {q:?}: {e:?}"
+            );
         }
     }
 }

@@ -23,7 +23,11 @@ pub struct Server {
 
 impl Server {
     pub fn new(home: PathBuf, use_model: bool) -> Self {
-        Self { home, use_model, zm: None }
+        Self {
+            home,
+            use_model,
+            zm: None,
+        }
     }
 
     pub fn serve(&mut self) -> std::io::Result<()> {
@@ -47,7 +51,9 @@ impl Server {
         if line.is_empty() {
             return None;
         }
-        let Ok(req) = serde_json::from_str::<Value>(line) else { return None };
+        let Ok(req) = serde_json::from_str::<Value>(line) else {
+            return None;
+        };
         let id = req.get("id")?.clone();
         let result = match req["method"].as_str().unwrap_or_default() {
             "initialize" => Ok(json!({
@@ -96,11 +102,10 @@ impl Server {
                     .ok_or_else(|| crate::error::Error::Invalid("query is required".into()))?;
                 let top_k = args["top_k"].as_u64().map(|k| k as usize);
                 let exclude = args["exclude_session"].as_str();
-                if let Some(sid) = exclude {
-                    zm.exclude_session(sid);
-                }
+                zm.exclude_session(exclude);
                 let result = zm.query(query, top_k)?;
-                Ok(serde_json::to_value(&result).expect("query result serializes"))            }
+                Ok(serde_json::to_value(&result).expect("query result serializes"))
+            }
             "zeromem_stats" => Ok(serde_json::to_value(zm.stats()).expect("stats serialize")),
             "zeromem_forget_session" => {
                 let sid = args["session_id"]
@@ -109,7 +114,9 @@ impl Server {
                 let removed = zm.delete_session(sid)?;
                 Ok(json!({"session_id": sid, "deleted_turns": removed}))
             }
-            other => Err(crate::error::Error::Invalid(format!("unknown tool {other}"))),
+            other => Err(crate::error::Error::Invalid(format!(
+                "unknown tool {other}"
+            ))),
         }
     }
 
@@ -119,8 +126,7 @@ impl Server {
             let embedder = if self.use_model {
                 crate::default_embedder(Some(&self.home.join("models")))
             } else {
-                Box::new(crate::embed::HashEmbedder::default())
-                    as Box<dyn crate::embed::Embedder>
+                Box::new(crate::embed::HashEmbedder::default()) as Box<dyn crate::embed::Embedder>
             };
             self.zm = Some(ZeroMem::open(&db, Config::default(), embedder)?);
         }
@@ -188,12 +194,19 @@ mod tests {
     fn handshake_and_tool_listing() {
         let home = temp_home("handshake");
         let mut s = Server::new(home.clone(), false);
-        let init = call(&mut s, 1, "initialize", json!({"protocolVersion": "2025-06-18"}));
+        let init = call(
+            &mut s,
+            1,
+            "initialize",
+            json!({"protocolVersion": "2025-06-18"}),
+        );
         assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(init["result"]["serverInfo"]["name"], "zeromem");
 
         // notification: no response
-        assert!(s.handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).is_none());
+        assert!(s
+            .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            .is_none());
 
         let tools = call(&mut s, 2, "tools/list", json!({}));
         let names: Vec<&str> = tools["result"]["tools"]
@@ -202,7 +215,10 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["zeromem_recall", "zeromem_stats", "zeromem_forget_session"]);
+        assert_eq!(
+            names,
+            ["zeromem_recall", "zeromem_stats", "zeromem_forget_session"]
+        );
 
         let bad = call(&mut s, 3, "resources/list", json!({}));
         assert_eq!(bad["error"]["code"], -32601);
@@ -262,8 +278,16 @@ mod tests {
         )
         .unwrap();
         let mut s = Server::new(home.clone(), false);
-        let stats = call(&mut s, 1, "tools/call", json!({"name": "zeromem_stats", "arguments": {}}));
-        assert!(stats["result"]["content"][0]["text"].as_str().unwrap().contains("\"turns\": 1"));
+        let stats = call(
+            &mut s,
+            1,
+            "tools/call",
+            json!({"name": "zeromem_stats", "arguments": {}}),
+        );
+        assert!(stats["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"turns\": 1"));
 
         let forget = call(
             &mut s,
@@ -271,9 +295,17 @@ mod tests {
             "tools/call",
             json!({"name": "zeromem_forget_session", "arguments": {"session_id": "old"}}),
         );
-        assert!(forget["result"]["content"][0]["text"].as_str().unwrap().contains("\"deleted_turns\": 1"));
+        assert!(forget["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"deleted_turns\": 1"));
 
-        let missing = call(&mut s, 3, "tools/call", json!({"name": "zeromem_recall", "arguments": {}}));
+        let missing = call(
+            &mut s,
+            3,
+            "tools/call",
+            json!({"name": "zeromem_recall", "arguments": {}}),
+        );
         assert_eq!(missing["result"]["isError"], true);
         let _ = std::fs::remove_dir_all(&home);
     }

@@ -11,7 +11,16 @@ pub fn min_max_normalize(scores: &HashMap<u32, f32>) -> HashMap<u32, f32> {
     let max = scores.values().cloned().fold(f32::NEG_INFINITY, f32::max);
     scores
         .iter()
-        .map(|(&d, &s)| (d, if max > min { (s - min) / (max - min) } else { 1.0 }))
+        .map(|(&d, &s)| {
+            (
+                d,
+                if max > min {
+                    (s - min) / (max - min)
+                } else {
+                    1.0
+                },
+            )
+        })
         .collect()
 }
 

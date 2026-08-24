@@ -70,7 +70,12 @@ pub fn build_profile(query: &str, ner: &dyn EntityExtractor) -> QueryProfile {
         .collect();
     let phrases = entities
         .iter()
-        .filter(|e| matches!(e.kind, EntityKind::Named | EntityKind::Date | EntityKind::Number | EntityKind::Quote))
+        .filter(|e| {
+            matches!(
+                e.kind,
+                EntityKind::Named | EntityKind::Date | EntityKind::Number | EntityKind::Quote
+            )
+        })
         .map(|e| e.canon.clone())
         .collect();
 
@@ -91,21 +96,30 @@ fn classify_answer_type(lower: &str) -> AnswerType {
     let starts = |p: &str| lower.starts_with(p);
     if starts("who") {
         AnswerType::Person
-    } else if starts("when") || lower.contains("what year") || lower.contains("what date")
-        || lower.contains("what time") || lower.contains("how long ago")
+    } else if starts("when")
+        || lower.contains("what year")
+        || lower.contains("what date")
+        || lower.contains("what time")
+        || lower.contains("how long ago")
     {
         AnswerType::Time
     } else if starts("where") {
         AnswerType::Place
-    } else if lower.contains("how many") || lower.contains("how much") || lower.contains("how old") {
+    } else if lower.contains("how many") || lower.contains("how much") || lower.contains("how old")
+    {
         AnswerType::Number
-    } else if lower.contains("list ") || lower.contains("what are") || lower.contains("which are")
+    } else if lower.contains("list ")
+        || lower.contains("what are")
+        || lower.contains("which are")
         || lower.contains("name all")
     {
         AnswerType::List
-    } else if ["is ", "are ", "was ", "were ", "did ", "does ", "do ", "has ", "have ", "can ", "will ", "would "]
-        .iter()
-        .any(|p| starts(p))
+    } else if [
+        "is ", "are ", "was ", "were ", "did ", "does ", "do ", "has ", "have ", "can ", "will ",
+        "would ",
+    ]
+    .iter()
+    .any(|p| starts(p))
     {
         AnswerType::Boolean
     } else if starts("what") || starts("which") || starts("whose") {
@@ -141,10 +155,20 @@ fn temporal_cues(lower: &str, entities: &[Entity]) -> TemporalCues {
     }
     if lower.contains("most recent") || lower.contains("latest") || lower.contains("last time") {
         cues.prefer = Some(RecencyPref::Latest);
-    } else if lower.contains("first time") || lower.contains("originally") || lower.contains("initially") {
+    } else if lower.contains("first time")
+        || lower.contains("originally")
+        || lower.contains("initially")
+    {
         cues.prefer = Some(RecencyPref::Earliest);
     }
-    for marker in ["yesterday", "last week", "last month", "last year", "recently", "earlier"] {
+    for marker in [
+        "yesterday",
+        "last week",
+        "last month",
+        "last year",
+        "recently",
+        "earlier",
+    ] {
         if lower.contains(marker) {
             cues.mentions.push(marker.to_string());
             if cues.prefer.is_none() {
@@ -173,8 +197,18 @@ fn ts(y: i64, m: u32, d: u32) -> i64 {
 fn month_num(name: &str) -> Option<u32> {
     let n = &name.to_lowercase()[..3.min(name.len())];
     Some(match n {
-        "jan" => 1, "feb" => 2, "mar" => 3, "apr" => 4, "may" => 5, "jun" => 6,
-        "jul" => 7, "aug" => 8, "sep" => 9, "oct" => 10, "nov" => 11, "dec" => 12,
+        "jan" => 1,
+        "feb" => 2,
+        "mar" => 3,
+        "apr" => 4,
+        "may" => 5,
+        "jun" => 6,
+        "jul" => 7,
+        "aug" => 8,
+        "sep" => 9,
+        "oct" => 10,
+        "nov" => 11,
+        "dec" => 12,
         _ => return None,
     })
 }
@@ -183,7 +217,13 @@ fn days_in_month(y: i64, m: u32) -> u32 {
     match m {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        _ => if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 { 29 } else { 28 },
+        _ => {
+            if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
     }
 }
 

@@ -36,7 +36,9 @@ pub fn calibrate_evidence(
         out.push((*m).clone());
         let mut supports: Vec<&Selected> = admissible
             .iter()
-            .filter(|s| s.role != EvidenceRole::Main && s.anchor == m.turn && !main_ids.contains(&s.turn))
+            .filter(|s| {
+                s.role != EvidenceRole::Main && s.anchor == m.turn && !main_ids.contains(&s.turn)
+            })
             .collect();
         supports.sort_by(|a, b| {
             role_rank(a.role)
@@ -65,7 +67,9 @@ fn distance(a: u32, b: u32) -> u32 {
 }
 
 fn violates_boundary(turn: &Turn, profile: &QueryProfile, session_order: &[String]) -> bool {
-    let Some(boundary) = profile.boundary else { return false };
+    let Some(boundary) = profile.boundary else {
+        return false;
+    };
     let Some(pos) = session_order.iter().position(|s| *s == turn.session_id) else {
         return true;
     };
@@ -84,7 +88,11 @@ fn superseded_mains(selected: &[Selected], turns: &[Turn], profile: &QueryProfil
     {
         return out;
     }
-    let kind = if profile.answer_type == AnswerType::Time { EntityKind::Date } else { EntityKind::Number };
+    let kind = if profile.answer_type == AnswerType::Time {
+        EntityKind::Date
+    } else {
+        EntityKind::Number
+    };
     let mut valued: Vec<(u32, i64, HashSet<String>)> = Vec::new();
     for s in selected.iter().filter(|s| s.role == EvidenceRole::Main) {
         let t = &turns[s.turn as usize];
@@ -99,9 +107,9 @@ fn superseded_mains(selected: &[Selected], turns: &[Turn], profile: &QueryProfil
         }
     }
     for (turn, ts, values) in &valued {
-        let newer_conflict = valued.iter().any(|(t2, ts2, v2)| {
-            t2 != turn && ts2 > ts && v2.is_disjoint(values)
-        });
+        let newer_conflict = valued
+            .iter()
+            .any(|(t2, ts2, v2)| t2 != turn && ts2 > ts && v2.is_disjoint(values));
         if newer_conflict {
             out.insert(*turn);
         }
@@ -119,7 +127,11 @@ pub struct CalibratedAnswer {
 
 /// eq 16: replace an unsupported scalar only when evidence has exactly one
 /// type-compatible candidate; prune list items absent from evidence.
-pub fn calibrate_answer(answer: &str, profile: &QueryProfile, evidence_texts: &[&str]) -> CalibratedAnswer {
+pub fn calibrate_answer(
+    answer: &str,
+    profile: &QueryProfile,
+    evidence_texts: &[&str],
+) -> CalibratedAnswer {
     let evidence_lower: Vec<String> = evidence_texts.iter().map(|t| t.to_lowercase()).collect();
     let candidates: Vec<String> = typed_candidates(profile.answer_type, evidence_texts)
         .into_iter()
@@ -155,7 +167,12 @@ pub fn calibrate_answer(answer: &str, profile: &QueryProfile, evidence_texts: &[
                 candidates,
             };
         }
-        return CalibratedAnswer { answer: answer.into(), changed: false, supported, candidates };
+        return CalibratedAnswer {
+            answer: answer.into(),
+            changed: false,
+            supported,
+            candidates,
+        };
     }
 
     if !supported && candidates.len() == 1 && scalar_type(profile.answer_type) {
@@ -166,11 +183,23 @@ pub fn calibrate_answer(answer: &str, profile: &QueryProfile, evidence_texts: &[
             candidates,
         };
     }
-    CalibratedAnswer { answer: answer.into(), changed: false, supported, candidates }
+    CalibratedAnswer {
+        answer: answer.into(),
+        changed: false,
+        supported,
+        candidates,
+    }
 }
 
 fn scalar_type(t: AnswerType) -> bool {
-    matches!(t, AnswerType::Time | AnswerType::Number | AnswerType::Person | AnswerType::Place | AnswerType::Entity)
+    matches!(
+        t,
+        AnswerType::Time
+            | AnswerType::Number
+            | AnswerType::Person
+            | AnswerType::Place
+            | AnswerType::Entity
+    )
 }
 
 fn typed_candidates(answer_type: AnswerType, evidence_texts: &[&str]) -> Vec<String> {
@@ -203,7 +232,11 @@ mod tests {
     #[test]
     fn unsupported_scalar_replaced_by_unique_candidate() {
         let p = build_profile("When did Carrie move to Jersey City?", &N);
-        let out = calibrate_answer("June 2021", &p, &["Carrie moved to Jersey City on February 14, 2022."]);
+        let out = calibrate_answer(
+            "June 2021",
+            &p,
+            &["Carrie moved to Jersey City on February 14, 2022."],
+        );
         assert!(out.changed);
         assert_eq!(out.answer, "february 14, 2022");
     }
@@ -211,7 +244,11 @@ mod tests {
     #[test]
     fn supported_answer_kept() {
         let p = build_profile("When did Carrie move to Jersey City?", &N);
-        let out = calibrate_answer("February 14, 2022", &p, &["Carrie moved to Jersey City on February 14, 2022."]);
+        let out = calibrate_answer(
+            "February 14, 2022",
+            &p,
+            &["Carrie moved to Jersey City on February 14, 2022."],
+        );
         assert!(!out.changed);
         assert!(out.supported);
     }
@@ -239,7 +276,11 @@ mod tests {
     #[test]
     fn ambiguous_candidates_leave_answer_alone() {
         let p = build_profile("When did Carrie move?", &N);
-        let out = calibrate_answer("sometime in spring", &p, &["She moved February 14, 2022.", "Or was it June 2, 2023?"]);
+        let out = calibrate_answer(
+            "sometime in spring",
+            &p,
+            &["She moved February 14, 2022.", "Or was it June 2, 2023?"],
+        );
         assert!(!out.changed);
         assert!(!out.supported);
     }

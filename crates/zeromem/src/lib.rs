@@ -85,7 +85,7 @@ pub struct ZeroMem {
     /// load new turns.
     generation: String,
     /// Session id dropped from query results.
-    excluded_sessions: Option<String>,
+    excluded_session: Option<String>,
 }
 
 impl ZeroMem {
@@ -123,7 +123,7 @@ impl ZeroMem {
             bm25: Bm25::default(),
             session_order: Vec::new(),
             generation,
-            excluded_sessions: None,
+            excluded_session: None,
         };
         for turn in zm.store.load_turns()? {
             zm.index_turn(turn)?;
@@ -131,9 +131,17 @@ impl ZeroMem {
         Ok(zm)
     }
 
-    pub fn ingest_turn(&mut self, session_id: &str, speaker: &str, text: &str, ts: i64) -> Result<i64> {
+    pub fn ingest_turn(
+        &mut self,
+        session_id: &str,
+        speaker: &str,
+        text: &str,
+        ts: i64,
+    ) -> Result<i64> {
         // Without a source uuid the insert cannot be a duplicate.
-        Ok(self.ingest(session_id, speaker, text, ts, None)?.expect("untagged insert"))
+        Ok(self
+            .ingest(session_id, speaker, text, ts, None)?
+            .expect("untagged insert"))
     }
 
     /// Like `ingest_turn`, but a turn whose `source_uuid` was already
@@ -160,7 +168,10 @@ impl ZeroMem {
         if text.trim().is_empty() {
             return Err(error::Error::Invalid("empty turn text".into()));
         }
-        match self.store.insert_turn(session_id, speaker, text, ts, source_uuid)? {
+        match self
+            .store
+            .insert_turn(session_id, speaker, text, ts, source_uuid)?
+        {
             None => Ok(None),
             Some(turn) => {
                 let id = turn.id;
@@ -170,9 +181,9 @@ impl ZeroMem {
         }
     }
 
-    /// Drops one session id from all query results.
-    pub fn exclude_session(&mut self, session_id: &str) {
-        self.excluded_sessions = Some(session_id.to_string());
+    /// Sets or clears the session id dropped from query results.
+    pub fn exclude_session(&mut self, session_id: Option<&str>) {
+        self.excluded_session = session_id.map(str::to_string);
     }
 
     /// Picks up turns other processes wrote since open or the last refresh.
@@ -265,7 +276,12 @@ impl ZeroMem {
     /// live turns and entities), so this reclaims space rather than fixing
     /// retrieval; a crash mid-sweep leaves nothing worse than unswept rows.
     fn sweep_embedding_cache(&mut self) -> Result<()> {
-        let live: Vec<&str> = self.graph.entities.iter().map(|e| e.canon.as_str()).collect();
+        let live: Vec<&str> = self
+            .graph
+            .entities
+            .iter()
+            .map(|e| e.canon.as_str())
+            .collect();
         self.store.sweep_orphan_embeddings(&live)
     }
 
@@ -282,7 +298,8 @@ impl ZeroMem {
             self.entity_vecs.push(v);
         }
 
-        self.hier.push_turn(idx, &turn.session_id, turn.ts, &vec, &self.cfg);
+        self.hier
+            .push_turn(idx, &turn.session_id, turn.ts, &vec, &self.cfg);
         self.bm25.add_doc(&text::tokenize(&turn.text));
         if !self.session_order.contains(&turn.session_id) {
             self.session_order.push(turn.session_id.clone());
@@ -317,21 +334,23 @@ impl ZeroMem {
         let (gw, hw) = route::view_weights(route, cfg.rho);
 
         if self.turns.is_empty() {
-            return Ok(QueryResult { route, evidence: Vec::new() });
+            return Ok(QueryResult {
+                route,
+                evidence: Vec::new(),
+            });
         }
         // over-fetch past the excluded turns so filtering stays lossless
-        let fetch = match &self.excluded_sessions {
-            Some(sid) => {
-                let excluded = self.turns.iter().filter(|t| &t.session_id == sid).count();
-                cfg.top_k + excluded
-            }
-            None => cfg.top_k,
-        };
-        let query_vec = self.embedder.embed(&[query])?.pop().unwrap_or_default();
-        if self.excluded_sessions.is_some() {
-            // Views and fusion size their candidate sets off cfg.top_k.
-            cfg.top_k = fetch;
+        let requested = cfg.top_k;
+        if let Some(sid) = &self.excluded_session {
+            let bump = self
+                .turns
+                .iter()
+                .filter(|t| &t.session_id == sid)
+                .count()
+                .min(cfg.top_k);
+            cfg.top_k += bump;
         }
+        let query_vec = self.embedder.embed(&[query])?.pop().unwrap_or_default();
 
         let graph_scores = graph_view::retrieve(
             &graph_view::GraphViewInput {
@@ -360,7 +379,8 @@ impl ZeroMem {
 
         let main = fuse::fuse(&graph_scores, &hier_scores, gw, hw, cfg.top_k);
         let closed = closure::close(&main, &self.graph, &self.turns, &cfg);
-        let final_set = calibrate::calibrate_evidence(closed, &self.turns, &profile, &self.session_order, &cfg);
+        let final_set =
+            calibrate::calibrate_evidence(closed, &self.turns, &profile, &self.session_order, &cfg);
 
         let evidence: Vec<Evidence> = final_set
             .into_iter()
@@ -380,17 +400,26 @@ impl ZeroMem {
             .collect();
         Ok(QueryResult {
             route,
-            evidence: match &self.excluded_sessions {
-                Some(sid) => evidence
-                    .into_iter()
-                    .filter(|e| e.session_id != *sid)
-                    .collect(),
-                None => evidence,
+            evidence: {
+                let mut ev: Vec<Evidence> = match &self.excluded_session {
+                    Some(sid) => evidence
+                        .into_iter()
+                        .filter(|e| e.session_id != *sid)
+                        .collect(),
+                    None => evidence,
+                };
+                ev.truncate(requested);
+                ev
             },
         })
     }
 
-    pub fn calibrate_answer(&self, query: &str, answer: &str, evidence_texts: &[&str]) -> calibrate::CalibratedAnswer {
+    pub fn calibrate_answer(
+        &self,
+        query: &str,
+        answer: &str,
+        evidence_texts: &[&str],
+    ) -> calibrate::CalibratedAnswer {
         let profile = self.profile(query);
         calibrate::calibrate_answer(answer, &profile, evidence_texts)
     }
@@ -416,8 +445,20 @@ mod tests {
     fn delete_session_cascades_to_cache() {
         let mut zm =
             ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
-        zm.ingest_turn("keep", "user", "Carrie adopted Lychee in Jersey City.", 1000).unwrap();
-        zm.ingest_turn("drop", "user", "Slowdive played the Fillmore with MBV.", 2000).unwrap();
+        zm.ingest_turn(
+            "keep",
+            "user",
+            "Carrie adopted Lychee in Jersey City.",
+            1000,
+        )
+        .unwrap();
+        zm.ingest_turn(
+            "drop",
+            "user",
+            "Slowdive played the Fillmore with MBV.",
+            2000,
+        )
+        .unwrap();
 
         assert_eq!(zm.delete_session("drop").unwrap(), 1);
         assert_eq!(zm.stats().turns, 1);
@@ -426,7 +467,10 @@ mod tests {
         assert_eq!(zm.store.embedding_keys("turn").unwrap().len(), 1);
         let entity_keys = zm.store.embedding_keys("entity").unwrap();
         assert_eq!(entity_keys.len(), zm.graph.len(), "{entity_keys:?}");
-        assert!(!entity_keys.contains(&"slowdive".to_string()), "{entity_keys:?}");
+        assert!(
+            !entity_keys.contains(&"slowdive".to_string()),
+            "{entity_keys:?}"
+        );
 
         assert_eq!(zm.delete_session("drop").unwrap(), 0);
     }
@@ -443,14 +487,16 @@ mod tests {
     #[test]
     fn refresh_picks_up_concurrent_ingest() {
         let (mut a, mut b, dir) = open_pair("refresh");
-        a.ingest_turn("s1", "user", "Carrie adopted Lychee in Jersey City.", 1000).unwrap();
+        a.ingest_turn("s1", "user", "Carrie adopted Lychee in Jersey City.", 1000)
+            .unwrap();
         assert_eq!(b.stats().turns, 0);
         assert_eq!(b.refresh().unwrap(), 1);
         assert_eq!(b.stats().turns, 1);
         assert_eq!(b.refresh().unwrap(), 0);
 
         // both sides ingest; each catches up to the other
-        b.ingest_turn("s2", "user", "Slowdive played the Fillmore.", 2000).unwrap();
+        b.ingest_turn("s2", "user", "Slowdive played the Fillmore.", 2000)
+            .unwrap();
         assert_eq!(a.refresh().unwrap(), 1);
         assert_eq!(a.stats().sessions, 2);
         let _ = std::fs::remove_dir_all(&dir);
@@ -459,8 +505,10 @@ mod tests {
     #[test]
     fn refresh_rebuilds_after_foreign_delete() {
         let (mut a, mut b, dir) = open_pair("gen");
-        a.ingest_turn("keep", "user", "Carrie runs the register.", 1000).unwrap();
-        a.ingest_turn("drop", "user", "Slowdive played the Fillmore.", 2000).unwrap();
+        a.ingest_turn("keep", "user", "Carrie runs the register.", 1000)
+            .unwrap();
+        a.ingest_turn("drop", "user", "Slowdive played the Fillmore.", 2000)
+            .unwrap();
         b.refresh().unwrap();
         assert_eq!(b.stats().turns, 2);
 
@@ -481,17 +529,28 @@ mod tests {
             ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
         // current session dominates the top of the ranking; other sessions
         // hold plenty of matching turns further down
-        zm.ingest_turn("cur", "user", "Carrie ordered Slowdive vinyl.", 1000).unwrap();
-        zm.ingest_turn("a", "user", "Slowdive vinyl arrived at the shop.", 2000).unwrap();
-        zm.ingest_turn("b", "user", "Slowdive vinyl restock is delayed.", 3000).unwrap();
-        zm.ingest_turn("c", "user", "Slowdive vinyl sold out again.", 4000).unwrap();
-        zm.ingest_turn("d", "user", "Slowdive vinyl display by the register.", 5000).unwrap();
-        zm.ingest_turn("e", "user", "Customer asked about Slowdive vinyl pricing.", 6000).unwrap();
+        zm.ingest_turn("cur", "user", "Carrie ordered Slowdive vinyl.", 1000)
+            .unwrap();
+        zm.ingest_turn("a", "user", "Slowdive vinyl arrived at the shop.", 2000)
+            .unwrap();
+        zm.ingest_turn("b", "user", "Slowdive vinyl restock is delayed.", 3000)
+            .unwrap();
+        zm.ingest_turn("c", "user", "Slowdive vinyl sold out again.", 4000)
+            .unwrap();
+        zm.ingest_turn("d", "user", "Slowdive vinyl display by the register.", 5000)
+            .unwrap();
+        zm.ingest_turn(
+            "e",
+            "user",
+            "Customer asked about Slowdive vinyl pricing.",
+            6000,
+        )
+        .unwrap();
 
         let plain = zm.query("Slowdive vinyl", None).unwrap();
         assert!(plain.evidence.iter().any(|e| e.session_id == "cur"));
 
-        zm.exclude_session("cur");
+        zm.exclude_session(Some("cur"));
         let filtered = zm.query("Slowdive vinyl", None).unwrap();
         assert!(!filtered.evidence.is_empty());
         assert!(
@@ -500,21 +559,25 @@ mod tests {
         );
         // over-fetch keeps the result set full instead of shrinking to
         // top_k minus excluded hits
-        assert_eq!(
-            filtered.evidence.len(),
-            plain.evidence.len() - plain.evidence.iter().filter(|e| e.session_id == "cur").count()
-                + (5 - 1).min(0).max(0),
-            "result set should stay near full size"
+        assert!(
+            filtered.evidence.len() >= 4,
+            "got {} items after excluding the dominant session",
+            filtered.evidence.len()
         );
-        assert!(filtered.evidence.len() >= 4, "{:?}", filtered.evidence.len());
     }
 
     #[test]
     fn dedup_ingest_skips_seen_uuid() {
         let mut zm =
             ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
-        assert!(zm.ingest_turn_dedup("s1", "user", "hello", 1000, "u-1").unwrap().is_some());
-        assert!(zm.ingest_turn_dedup("s1", "user", "hello", 1000, "u-1").unwrap().is_none());
+        assert!(zm
+            .ingest_turn_dedup("s1", "user", "hello", 1000, "u-1")
+            .unwrap()
+            .is_some());
+        assert!(zm
+            .ingest_turn_dedup("s1", "user", "hello", 1000, "u-1")
+            .unwrap()
+            .is_none());
         assert_eq!(zm.stats().turns, 1);
     }
 }
@@ -528,7 +591,9 @@ pub fn default_embedder(cache_dir: Option<&Path>) -> Box<dyn Embedder> {
             .unwrap_or_else(|| std::env::temp_dir().join("zeromem-models"));
         match embed::FastEmbedder::new(&dir) {
             Ok(e) => return Box::new(e),
-            Err(err) => eprintln!("zeromem: fastembed unavailable ({err}), falling back to hash embedder"),
+            Err(err) => {
+                eprintln!("zeromem: fastembed unavailable ({err}), falling back to hash embedder")
+            }
         }
     }
     let _ = cache_dir;
