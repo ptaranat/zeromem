@@ -19,8 +19,7 @@ pub struct Server {
     home: PathBuf,
     use_model: bool,
     zm: Option<ZeroMem>,
-    /// One-time notice appended to the first recall result when running on
-    /// the hash fallback embedder, so silent quality loss is visible.
+    /// One-time notice on the first recall when running the fallback embedder.
     warned_fallback: bool,
 }
 

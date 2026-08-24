@@ -66,8 +66,7 @@ pub struct Stats {
     pub windows: usize,
     pub episodes: usize,
     pub embedder: String,
-    /// True when the active embedder is a lexical-only fallback; recall
-    /// quality is materially lower and hosts should say so.
+    /// True when running the lexical-only fallback embedder.
     pub embedder_is_fallback: bool,
 }
 

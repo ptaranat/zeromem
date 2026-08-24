@@ -5,9 +5,7 @@ pub trait Embedder: Send + Sync {
     fn id(&self) -> String;
     fn dim(&self) -> usize;
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
-    /// True for lexical-only fallbacks whose similarity is far weaker than a
-    /// real embedding model; hosts surface this so silent quality loss is
-    /// visible.
+    /// True for lexical-only fallback embedders.
     fn is_fallback(&self) -> bool {
         false
     }
