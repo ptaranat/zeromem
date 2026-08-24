@@ -62,7 +62,9 @@ pub fn run(home: &Path, input: &str) -> Result<usize> {
     if let Some(dir) = offset_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = offset_path.with_extension("tmp");
+    // pid-suffixed tmp: two hook events on one transcript cannot clobber
+    // each other's rename
+    let tmp = offset_path.with_extension(format!("tmp-{}", std::process::id()));
     std::fs::write(&tmp, (offset + consumed as u64).to_string())?;
     std::fs::rename(&tmp, &offset_path)?;
     Ok(turns.len())
