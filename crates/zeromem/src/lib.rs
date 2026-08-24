@@ -84,8 +84,7 @@ pub struct ZeroMem {
     /// session, so other open handles know to rebuild rather than only
     /// load new turns.
     generation: String,
-    /// Session id dropped from query results (hosts that know their own
-    /// session set this so recall cannot echo the conversation in flight).
+    /// Session id dropped from query results.
     excluded_sessions: Option<String>,
 }
 
@@ -171,9 +170,7 @@ impl ZeroMem {
         }
     }
 
-    /// Drops one session id from all query results. Hosts that know their
-    /// own session set this so recall cannot echo the conversation in
-    /// flight. Over-fetching keeps the result set full after the filter.
+    /// Drops one session id from all query results.
     pub fn exclude_session(&mut self, session_id: &str) {
         self.excluded_sessions = Some(session_id.to_string());
     }
@@ -322,8 +319,7 @@ impl ZeroMem {
         if self.turns.is_empty() {
             return Ok(QueryResult { route, evidence: Vec::new() });
         }
-        // Over-fetch so an exclusion still leaves a full result set; the
-        // fuse truncation below cuts back to cfg.top_k.
+        // over-fetch past the excluded turns so filtering stays lossless
         let fetch = match &self.excluded_sessions {
             Some(sid) => {
                 let excluded = self.turns.iter().filter(|t| &t.session_id == sid).count();
