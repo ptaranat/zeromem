@@ -105,7 +105,11 @@ mod tests {
     use super::*;
 
     fn cfg() -> Config {
-        Config { window_size: 2, episode_gap_secs: 100, ..Config::default() }
+        Config {
+            window_size: 2,
+            episode_gap_secs: 100,
+            ..Config::default()
+        }
     }
 
     #[test]

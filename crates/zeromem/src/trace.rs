@@ -14,6 +14,9 @@ pub struct Turn {
 
 impl Turn {
     pub fn provenance(&self) -> String {
-        format!("[{} #{} {} @{}]", self.session_id, self.session_turn, self.speaker, self.ts)
+        format!(
+            "[{} #{} {} @{}]",
+            self.session_id, self.session_turn, self.speaker, self.ts
+        )
     }
 }

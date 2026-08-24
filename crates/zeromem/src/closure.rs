@@ -31,7 +31,12 @@ pub fn close(
     let mut seen: HashSet<u32> = main.iter().map(|(t, _)| *t).collect();
     let mut out: Vec<Selected> = main
         .iter()
-        .map(|&(turn, score)| Selected { turn, score, role: EvidenceRole::Main, anchor: turn })
+        .map(|&(turn, score)| Selected {
+            turn,
+            score,
+            role: EvidenceRole::Main,
+            anchor: turn,
+        })
         .collect();
 
     for &(m, score) in main {
@@ -107,7 +112,17 @@ fn starts_anaphoric(text: &str) -> bool {
     let first = text.split_whitespace().next().unwrap_or("").to_lowercase();
     matches!(
         first.as_str(),
-        "he" | "she" | "they" | "it" | "that" | "this" | "those" | "these" | "yes" | "no" | "yeah" | "same"
+        "he" | "she"
+            | "they"
+            | "it"
+            | "that"
+            | "this"
+            | "those"
+            | "these"
+            | "yes"
+            | "no"
+            | "yeah"
+            | "same"
     )
 }
 
@@ -132,7 +147,11 @@ mod tests {
         let turns = vec![
             turn(0, "s1", "Carrie got a dog named Lychee."),
             turn(1, "s1", "The weather was nice."),
-            turn(2, "s1", "Lychee chewed the couch, Carrie was furious about the couch damage."),
+            turn(
+                2,
+                "s1",
+                "Lychee chewed the couch, Carrie was furious about the couch damage.",
+            ),
         ];
         let mut g = EntityGraph::default();
         for (i, t) in turns.iter().enumerate() {
@@ -146,6 +165,8 @@ mod tests {
             .map(|s| s.turn)
             .collect();
         assert_eq!(bridges, vec![2]);
-        assert!(out.iter().any(|s| s.role == EvidenceRole::LocalNeighbor && s.turn == 1));
+        assert!(out
+            .iter()
+            .any(|s| s.role == EvidenceRole::LocalNeighbor && s.turn == 1));
     }
 }

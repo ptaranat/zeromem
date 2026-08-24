@@ -61,7 +61,11 @@ impl Embedder for HashEmbedder {
             .map(|text| {
                 let mut v = vec![0.0f32; self.dim];
                 for tok in crate::text::tokenize(text) {
-                    let w = if crate::text::is_stopword(&tok) { 0.2 } else { 1.0 };
+                    let w = if crate::text::is_stopword(&tok) {
+                        0.2
+                    } else {
+                        1.0
+                    };
                     self.bump(&mut v, &tok, w);
                     let padded: Vec<char> = format!("^{tok}$").chars().collect();
                     for tri in padded.windows(3) {
@@ -105,9 +109,12 @@ mod fast {
         pub fn new(cache_dir: &std::path::Path) -> Result<Self> {
             let opts = fastembed::InitOptions::new(fastembed::EmbeddingModel::BGESmallENV15)
                 .with_cache_dir(cache_dir.to_path_buf());
-            let model = fastembed::TextEmbedding::try_new(opts)
-                .map_err(|e| Error::Embed(e.to_string()))?;
-            Ok(Self { model: Mutex::new(model), dim: 384 })
+            let model =
+                fastembed::TextEmbedding::try_new(opts).map_err(|e| Error::Embed(e.to_string()))?;
+            Ok(Self {
+                model: Mutex::new(model),
+                dim: 384,
+            })
         }
     }
 
@@ -142,7 +149,11 @@ mod tests {
     fn hash_embedder_similarity_ordering() {
         let e = HashEmbedder::default();
         let vs = e
-            .embed(&["the dog barked at the mailman", "a dog was barking loudly", "quarterly revenue projections"])
+            .embed(&[
+                "the dog barked at the mailman",
+                "a dog was barking loudly",
+                "quarterly revenue projections",
+            ])
             .unwrap();
         let close = cosine(&vs[0], &vs[1]);
         let far = cosine(&vs[0], &vs[2]);

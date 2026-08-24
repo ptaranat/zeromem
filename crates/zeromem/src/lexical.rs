@@ -46,7 +46,9 @@ impl Bm25 {
         let avgdl = self.total_len / n;
         let mut out: HashMap<u32, f32> = HashMap::new();
         for t in query_tokens {
-            let Some(&id) = self.term_ids.get(t) else { continue };
+            let Some(&id) = self.term_ids.get(t) else {
+                continue;
+            };
             let posting = &self.postings[id as usize];
             let df = posting.len() as f32;
             let idf = ((n - df + 0.5) / (df + 0.5) + 1.0).ln();
@@ -63,7 +65,10 @@ impl Bm25 {
 /// Count of query phrases (names, dates, numbers, quotes) appearing verbatim in text.
 pub fn phrase_matches(phrases: &[String], text: &str) -> usize {
     let lower = text.to_lowercase();
-    phrases.iter().filter(|p| !p.is_empty() && lower.contains(p.as_str())).count()
+    phrases
+        .iter()
+        .filter(|p| !p.is_empty() && lower.contains(p.as_str()))
+        .count()
 }
 
 #[cfg(test)]
@@ -84,6 +89,9 @@ mod tests {
 
     #[test]
     fn phrase_match_case_insensitive() {
-        assert_eq!(phrase_matches(&["blue bottle".into()], "at Blue Bottle today"), 1);
+        assert_eq!(
+            phrase_matches(&["blue bottle".into()], "at Blue Bottle today"),
+            1
+        );
     }
 }

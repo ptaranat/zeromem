@@ -113,7 +113,11 @@ fn best_effort_entity_vec(subject: &str, input: &GraphViewInput) -> Option<Vec<f
 
 /// eq 10 over the bipartite entity-turn graph plus turn adjacency. Node order:
 /// entities then turns. Returns turn-node mass.
-fn personalized_pagerank(input: &GraphViewInput, activations: &HashMap<u32, f32>, cfg: &Config) -> Vec<f32> {
+fn personalized_pagerank(
+    input: &GraphViewInput,
+    activations: &HashMap<u32, f32>,
+    cfg: &Config,
+) -> Vec<f32> {
     let g = input.graph;
     let ne = g.len();
     let nt = input.turns.len();
@@ -147,7 +151,9 @@ fn personalized_pagerank(input: &GraphViewInput, activations: &HashMap<u32, f32>
     let mut pi = reset.clone();
     let mut next = vec![0.0f32; n];
     for _ in 0..cfg.ppr_iters {
-        next.iter_mut().zip(&reset).for_each(|(x, r)| *x = (1.0 - cfg.gamma) * r);
+        next.iter_mut()
+            .zip(&reset)
+            .for_each(|(x, r)| *x = (1.0 - cfg.gamma) * r);
         for e in 0..ne {
             let mass = pi[e];
             if mass <= 0.0 {
@@ -170,7 +176,11 @@ fn personalized_pagerank(input: &GraphViewInput, activations: &HashMap<u32, f32>
             let ents = g.turn_weights(t as u32);
             let neighbors = adjacent(t, nt, input.turns);
             let entity_share = if ents.is_empty() { 0.0 } else { 0.8 };
-            let adj_share = if neighbors.is_empty() { 0.0 } else { 1.0 - entity_share };
+            let adj_share = if neighbors.is_empty() {
+                0.0
+            } else {
+                1.0 - entity_share
+            };
             if ents.is_empty() && neighbors.is_empty() {
                 next[ne + t] += cfg.gamma * mass;
                 continue;
