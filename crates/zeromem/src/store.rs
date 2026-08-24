@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn sweep_is_idempotent_and_cleans_turn_rows() {
-        let s = Store::open_in_memory().unwrap();
+        let mut s = Store::open_in_memory().unwrap();
         let t = s
             .insert_turn("s1", "user", "hello", 1000, None)
             .unwrap()
