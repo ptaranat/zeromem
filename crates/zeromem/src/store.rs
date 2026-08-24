@@ -182,14 +182,22 @@ impl Store {
     }
 
     /// Deletes cache rows for turns no longer in the turns table and for
-    /// entities absent from `live_entities`, in one transaction.
+    /// entities absent from `live_entities`, in one transaction. The turn
+    /// side keys off an indexed integer column rather than a text CAST.
     pub fn sweep_orphan_embeddings(&mut self, live_entities: &[&str]) -> Result<()> {
         let tx = self.conn.transaction()?;
+        tx.execute_batch(
+            "ALTER TABLE embeddings ADD COLUMN turn_id INTEGER;
+             CREATE INDEX IF NOT EXISTS embeddings_turn_id ON embeddings(turn_id);
+             UPDATE embeddings SET turn_id = CAST(key AS INTEGER) WHERE kind = 'turn' AND turn_id IS NULL;",
+        )?;
         tx.execute(
             "DELETE FROM embeddings WHERE kind = 'turn'
-             AND key NOT IN (SELECT CAST(id AS TEXT) FROM turns)",
+             AND turn_id IS NOT NULL
+             AND turn_id NOT IN (SELECT id FROM turns)",
             [],
         )?;
+        tx.execute("DELETE FROM embeddings WHERE kind = 'turn' AND turn_id IS NULL", [])?;
         tx.execute("CREATE TEMP TABLE live_entity (key TEXT PRIMARY KEY)", [])?;
         {
             let mut ins = tx.prepare("INSERT OR IGNORE INTO live_entity (key) VALUES (?1)")?;
