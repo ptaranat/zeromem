@@ -19,14 +19,19 @@ pub struct Server {
     home: PathBuf,
     use_model: bool,
     zm: Option<ZeroMem>,
-    /// One-time notice appended to the first recall result when running on
-    /// the hash fallback embedder, so silent quality loss is visible.
-    warned_fallback: bool,
+    /// Set at startup when the embedder is the lexical fallback; consumed by
+    /// the first recall, which then appends a warning to its result.
+    warn_on_fallback: bool,
 }
 
 impl Server {
     pub fn new(home: PathBuf, use_model: bool) -> Self {
-        Self { home, use_model, zm: None, warned_fallback: false }
+        Self {
+            home,
+            use_model,
+            zm: None,
+            warn_on_fallback: true,
+        }
     }
 
     pub fn serve(&mut self) -> std::io::Result<()> {
@@ -50,7 +55,9 @@ impl Server {
         if line.is_empty() {
             return None;
         }
-        let Ok(req) = serde_json::from_str::<Value>(line) else { return None };
+        let Ok(req) = serde_json::from_str::<Value>(line) else {
+            return None;
+        };
         let id = req.get("id")?.clone();
         let result = match req["method"].as_str().unwrap_or_default() {
             "initialize" => Ok(json!({
@@ -99,14 +106,11 @@ impl Server {
                     .ok_or_else(|| crate::error::Error::Invalid("query is required".into()))?;
                 let top_k = args["top_k"].as_u64().map(|k| k as usize);
                 let exclude = args["exclude_session"].as_str();
-                if let Some(sid) = exclude {
-                    zm.exclude_session(sid);
-                }
+                zm.exclude_session(exclude);
                 let result = zm.query(query, top_k)?;
-                let mut value =
-                    serde_json::to_value(&result).expect("query result serializes");
-                if !self.warned_fallback && self.open()?.stats().embedder_is_fallback {
-                    self.warned_fallback = true;
+                let mut value = serde_json::to_value(&result).expect("query result serializes");
+                if self.warn_on_fallback {
+                    self.warn_on_fallback = false;
                     let note = json!({
                         "note": "zeromem is running on the hash fallback embedder \
                                  (lexical similarity only). Recall quality is lower; \
@@ -116,7 +120,8 @@ impl Server {
                         obj.insert("warning".into(), note);
                     }
                 }
-                Ok(value)            }
+                Ok(value)
+            }
             "zeromem_stats" => Ok(serde_json::to_value(zm.stats()).expect("stats serialize")),
             "zeromem_forget_session" => {
                 let sid = args["session_id"]
@@ -125,7 +130,9 @@ impl Server {
                 let removed = zm.delete_session(sid)?;
                 Ok(json!({"session_id": sid, "deleted_turns": removed}))
             }
-            other => Err(crate::error::Error::Invalid(format!("unknown tool {other}"))),
+            other => Err(crate::error::Error::Invalid(format!(
+                "unknown tool {other}"
+            ))),
         }
     }
 
@@ -135,9 +142,9 @@ impl Server {
             let embedder = if self.use_model {
                 crate::default_embedder(Some(&self.home.join("models")))
             } else {
-                Box::new(crate::embed::HashEmbedder::default())
-                    as Box<dyn crate::embed::Embedder>
+                Box::new(crate::embed::HashEmbedder::default()) as Box<dyn crate::embed::Embedder>
             };
+            self.warn_on_fallback = embedder.is_fallback();
             self.zm = Some(ZeroMem::open(&db, Config::default(), embedder)?);
         }
         Ok(self.zm.as_mut().expect("just opened"))
@@ -201,15 +208,60 @@ mod tests {
     }
 
     #[test]
+    fn fallback_warning_fires_once() {
+        let home = temp_home("warn");
+        spool::append_event(
+            &home,
+            &[SpoolTurn {
+                session_id: "s1".into(),
+                speaker: "user".into(),
+                text: "Carrie runs the register.".into(),
+                ts: 1000,
+                uuid: "u1".into(),
+            }],
+        )
+        .unwrap();
+        let mut s = Server::new(home.clone(), false);
+        for (i, want) in [true, false].into_iter().enumerate() {
+            let resp = call(
+                &mut s,
+                i as u64,
+                "tools/call",
+                json!({"name": "zeromem_recall", "arguments": {"query": "register"}}),
+            );
+            let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+            assert_eq!(text.contains("fallback embedder"), want, "call {i}: {text}");
+        }
+        let stats = call(
+            &mut s,
+            9,
+            "tools/call",
+            json!({"name": "zeromem_stats", "arguments": {}}),
+        );
+        assert!(stats["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"embedder_is_fallback\": true"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn handshake_and_tool_listing() {
         let home = temp_home("handshake");
         let mut s = Server::new(home.clone(), false);
-        let init = call(&mut s, 1, "initialize", json!({"protocolVersion": "2025-06-18"}));
+        let init = call(
+            &mut s,
+            1,
+            "initialize",
+            json!({"protocolVersion": "2025-06-18"}),
+        );
         assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(init["result"]["serverInfo"]["name"], "zeromem");
 
         // notification: no response
-        assert!(s.handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).is_none());
+        assert!(s
+            .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            .is_none());
 
         let tools = call(&mut s, 2, "tools/list", json!({}));
         let names: Vec<&str> = tools["result"]["tools"]
@@ -218,7 +270,10 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["zeromem_recall", "zeromem_stats", "zeromem_forget_session"]);
+        assert_eq!(
+            names,
+            ["zeromem_recall", "zeromem_stats", "zeromem_forget_session"]
+        );
 
         let bad = call(&mut s, 3, "resources/list", json!({}));
         assert_eq!(bad["error"]["code"], -32601);
@@ -278,8 +333,16 @@ mod tests {
         )
         .unwrap();
         let mut s = Server::new(home.clone(), false);
-        let stats = call(&mut s, 1, "tools/call", json!({"name": "zeromem_stats", "arguments": {}}));
-        assert!(stats["result"]["content"][0]["text"].as_str().unwrap().contains("\"turns\": 1"));
+        let stats = call(
+            &mut s,
+            1,
+            "tools/call",
+            json!({"name": "zeromem_stats", "arguments": {}}),
+        );
+        assert!(stats["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"turns\": 1"));
 
         let forget = call(
             &mut s,
@@ -287,9 +350,17 @@ mod tests {
             "tools/call",
             json!({"name": "zeromem_forget_session", "arguments": {"session_id": "old"}}),
         );
-        assert!(forget["result"]["content"][0]["text"].as_str().unwrap().contains("\"deleted_turns\": 1"));
+        assert!(forget["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"deleted_turns\": 1"));
 
-        let missing = call(&mut s, 3, "tools/call", json!({"name": "zeromem_recall", "arguments": {}}));
+        let missing = call(
+            &mut s,
+            3,
+            "tools/call",
+            json!({"name": "zeromem_recall", "arguments": {}}),
+        );
         assert_eq!(missing["result"]["isError"], true);
         let _ = std::fs::remove_dir_all(&home);
     }

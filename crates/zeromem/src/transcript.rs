@@ -54,7 +54,9 @@ fn parse_line(line: &str) -> Option<TranscriptTurn> {
     Some(TranscriptTurn {
         speaker: speaker.to_string(),
         text,
-        ts: v["timestamp"].as_str().map_or(0, |s| parse_iso8601(s).unwrap_or(0)),
+        ts: v["timestamp"]
+            .as_str()
+            .map_or(0, |s| parse_iso8601(s).unwrap_or(0)),
         uuid,
     })
 }
@@ -100,14 +102,21 @@ pub fn parse_iso8601(s: &str) -> Option<i64> {
     let s = s.strip_suffix('Z')?;
     let (date, time) = s.split_once('T')?;
     let mut d = date.split('-');
-    let (y, m, day) = (d.next()?.parse().ok()?, d.next()?.parse().ok()?, d.next()?.parse().ok()?);
+    let (y, m, day) = (
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+    );
     if d.next().is_some() || !(1..=12).contains(&m) || !(1..=days_in_month(y, m)).contains(&day) {
         return None;
     }
     let time = time.split_once('.').map_or(time, |(t, _)| t);
     let mut t = time.split(':');
-    let (h, min, sec): (i64, i64, i64) =
-        (t.next()?.parse().ok()?, t.next()?.parse().ok()?, t.next().unwrap_or("0").parse().ok()?);
+    let (h, min, sec): (i64, i64, i64) = (
+        t.next()?.parse().ok()?,
+        t.next()?.parse().ok()?,
+        t.next().unwrap_or("0").parse().ok()?,
+    );
     if t.next().is_some() || h > 23 || min > 59 || sec > 59 {
         return None;
     }
@@ -184,10 +193,26 @@ mod tests {
         );
         let input = [
             sidechain.trim().to_string(),
-            line("user", "u1", serde_json::json!([{"type": "tool_result", "content": "445 files"}])),
-            line("user", "u2", serde_json::json!("<command-name>/model</command-name>")),
-            line("user", "u3", serde_json::json!("<system-reminder>recall</system-reminder>")),
-            line("user", "u4", serde_json::json!("Caveat: local command noise")),
+            line(
+                "user",
+                "u1",
+                serde_json::json!([{"type": "tool_result", "content": "445 files"}]),
+            ),
+            line(
+                "user",
+                "u2",
+                serde_json::json!("<command-name>/model</command-name>"),
+            ),
+            line(
+                "user",
+                "u3",
+                serde_json::json!("<system-reminder>recall</system-reminder>"),
+            ),
+            line(
+                "user",
+                "u4",
+                serde_json::json!("Caveat: local command noise"),
+            ),
             line("system", "s2", serde_json::json!("hook ran")),
             serde_json::json!({"type": "summary", "summary": "compacted"}).to_string(),
             "not json at all".to_string(),
@@ -220,7 +245,10 @@ mod tests {
     #[test]
     fn iso8601_parses_and_rejects() {
         assert_eq!(parse_iso8601("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(parse_iso8601("2022-02-14T00:00:00.500Z"), Some(1_644_796_800));
+        assert_eq!(
+            parse_iso8601("2022-02-14T00:00:00.500Z"),
+            Some(1_644_796_800)
+        );
         assert_eq!(parse_iso8601("2022-02-14T00:00:00+02:00"), None);
         assert_eq!(parse_iso8601("garbage"), None);
         assert_eq!(parse_iso8601("2022-02-31T00:00:00Z"), None);

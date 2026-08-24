@@ -71,7 +71,8 @@ pub fn run(home: &Path, input: &str) -> Result<usize> {
 }
 
 fn offset_path(home: &Path, transcript_path: &str) -> PathBuf {
-    home.join("offsets").join(format!("{:016x}", fnv1a(transcript_path)))
+    home.join("offsets")
+        .join(format!("{:016x}", fnv1a(transcript_path)))
 }
 
 fn fnv1a(s: &str) -> u64 {
@@ -137,11 +138,19 @@ mod tests {
     fn truncated_transcript_resets_offset() {
         let home = temp_home("reset");
         let transcript = home.join("transcript.jsonl");
-        let long = format!("{}\n{}\n", transcript_line("u1", "one"), transcript_line("u2", "two"));
+        let long = format!(
+            "{}\n{}\n",
+            transcript_line("u1", "one"),
+            transcript_line("u2", "two")
+        );
         std::fs::write(&transcript, &long).unwrap();
         assert_eq!(run(&home, &hook_input(&transcript)).unwrap(), 2);
 
-        std::fs::write(&transcript, format!("{}\n", transcript_line("u9", "fresh file"))).unwrap();
+        std::fs::write(
+            &transcript,
+            format!("{}\n", transcript_line("u9", "fresh file")),
+        )
+        .unwrap();
         assert_eq!(run(&home, &hook_input(&transcript)).unwrap(), 1);
         let _ = std::fs::remove_dir_all(&home);
     }

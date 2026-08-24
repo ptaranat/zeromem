@@ -76,8 +76,12 @@ fn patterns() -> &'static Patterns {
         url: re(r"https?://\S+"),
         email: re(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
         iso_date: re(r"\b\d{4}-\d{2}-\d{2}\b"),
-        month_day_year: re(&format!(r"\b(?:{MONTHS})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+\d{{4}})?\b")),
-        day_month_year: re(&format!(r"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{MONTHS})\.?(?:\s+\d{{4}})?\b")),
+        month_day_year: re(&format!(
+            r"\b(?:{MONTHS})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+\d{{4}})?\b"
+        )),
+        day_month_year: re(&format!(
+            r"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{MONTHS})\.?(?:\s+\d{{4}})?\b"
+        )),
         month_year: re(&format!(r"\b(?:{MONTHS})\.?\s+\d{{4}}\b")),
         year: re(r"\b(?:19|20)\d{2}\b"),
         number: re(r"[$€£]?\b\d+(?:[,.]\d+)*%?"),
@@ -111,10 +115,33 @@ fn sentence_start_noise(w: &str) -> bool {
     is_stopword(&lower)
         || matches!(
             lower.as_str(),
-            "hi" | "hey" | "hello" | "thanks" | "thank" | "sure" | "maybe" | "sometimes"
-                | "today" | "yesterday" | "tomorrow" | "last" | "next" | "first" | "finally"
-                | "anyway" | "actually" | "honestly" | "recently" | "everyone" | "someone"
-                | "nothing" | "everything" | "please" | "sorry" | "great" | "good" | "right"
+            "hi" | "hey"
+                | "hello"
+                | "thanks"
+                | "thank"
+                | "sure"
+                | "maybe"
+                | "sometimes"
+                | "today"
+                | "yesterday"
+                | "tomorrow"
+                | "last"
+                | "next"
+                | "first"
+                | "finally"
+                | "anyway"
+                | "actually"
+                | "honestly"
+                | "recently"
+                | "everyone"
+                | "someone"
+                | "nothing"
+                | "everything"
+                | "please"
+                | "sorry"
+                | "great"
+                | "good"
+                | "right"
         )
 }
 
@@ -124,18 +151,24 @@ fn is_cap_word(w: &str) -> bool {
         Some(c) if c.is_uppercase() => {}
         _ => return false,
     }
-    w.chars().all(|c| c.is_alphanumeric() || c == '\'' || c == '-' || c == '.')
+    w.chars()
+        .all(|c| c.is_alphanumeric() || c == '\'' || c == '-' || c == '.')
 }
 
 fn is_connector(w: &str) -> bool {
-    matches!(w, "of" | "the" | "and" | "de" | "da" | "di" | "van" | "von" | "la" | "le")
+    matches!(
+        w,
+        "of" | "the" | "and" | "de" | "da" | "di" | "van" | "von" | "la" | "le"
+    )
 }
 
 impl HeuristicNer {
     fn capitalized_spans(&self, sentence: &str, out: &mut Vec<Entity>) {
         let words: Vec<&str> = sentence
             .split_whitespace()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'' && c != '-' && c != '.'))
+            .map(|w| {
+                w.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'' && c != '-' && c != '.')
+            })
             .collect();
         let mut i = 0;
         while i < words.len() {
@@ -231,7 +264,11 @@ mod tests {
     use super::*;
 
     fn canons(text: &str) -> Vec<String> {
-        HeuristicNer.extract(text).into_iter().map(|e| e.canon).collect()
+        HeuristicNer
+            .extract(text)
+            .into_iter()
+            .map(|e| e.canon)
+            .collect()
     }
 
     #[test]
@@ -245,7 +282,10 @@ mod tests {
     fn extracts_dates_not_their_digits() {
         let ents = HeuristicNer.extract("We moved on February 14, 2022 and paid $1200.");
         let dates: Vec<_> = ents.iter().filter(|e| e.kind == EntityKind::Date).collect();
-        let nums: Vec<_> = ents.iter().filter(|e| e.kind == EntityKind::Number).collect();
+        let nums: Vec<_> = ents
+            .iter()
+            .filter(|e| e.kind == EntityKind::Number)
+            .collect();
         assert_eq!(dates.len(), 1, "{ents:?}");
         assert_eq!(nums.len(), 1, "{ents:?}");
         assert_eq!(nums[0].canon, "$1200");

@@ -134,7 +134,9 @@ impl Store {
         let id = self.conn.last_insert_rowid();
         let session_turn =
             self.conn
-                .query_row("SELECT session_turn FROM turns WHERE id = ?1", [id], |r| r.get(0))?;
+                .query_row("SELECT session_turn FROM turns WHERE id = ?1", [id], |r| {
+                    r.get(0)
+                })?;
         Ok(Some(Turn {
             id,
             session_id: session_id.to_string(),
@@ -172,11 +174,15 @@ impl Store {
     }
 
     pub fn delete_session_turns(&self, session_id: &str) -> Result<usize> {
-        Ok(self.conn.execute("DELETE FROM turns WHERE session_id = ?1", [session_id])?)
+        Ok(self
+            .conn
+            .execute("DELETE FROM turns WHERE session_id = ?1", [session_id])?)
     }
 
     pub fn embedding_keys(&self, kind: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT key FROM embeddings WHERE kind = ?1")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key FROM embeddings WHERE kind = ?1")?;
         let rows = stmt.query_map([kind], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
@@ -215,7 +221,9 @@ impl Store {
     }
 
     pub fn turn_count(&self) -> Result<i64> {
-        Ok(self.conn.query_row("SELECT COUNT(*) FROM turns", [], |r| r.get(0))?)
+        Ok(self
+            .conn
+            .query_row("SELECT COUNT(*) FROM turns", [], |r| r.get(0))?)
     }
 }
 
@@ -224,7 +232,9 @@ fn f32_to_bytes(v: &[f32]) -> Vec<u8> {
 }
 
 fn bytes_to_f32(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }
 
 #[cfg(test)]
@@ -234,12 +244,24 @@ mod tests {
     #[test]
     fn roundtrip_turn_and_embedding() {
         let s = Store::open_in_memory().unwrap();
-        let t = s.insert_turn("s1", "user", "hello", 1000, None).unwrap().unwrap();
+        let t = s
+            .insert_turn("s1", "user", "hello", 1000, None)
+            .unwrap()
+            .unwrap();
         assert_eq!(t.id, 1);
         assert_eq!(t.session_turn, 0);
-        let t2 = s.insert_turn("s1", "user", "again", 1001, None).unwrap().unwrap();
+        let t2 = s
+            .insert_turn("s1", "user", "again", 1001, None)
+            .unwrap()
+            .unwrap();
         assert_eq!(t2.session_turn, 1);
-        assert_eq!(s.insert_turn("s2", "user", "other", 1002, None).unwrap().unwrap().session_turn, 0);
+        assert_eq!(
+            s.insert_turn("s2", "user", "other", 1002, None)
+                .unwrap()
+                .unwrap()
+                .session_turn,
+            0
+        );
 
         s.put_embedding("turn", "1", &[0.5, -1.0]).unwrap();
         assert_eq!(s.embedding("turn", "1").unwrap().unwrap(), vec![0.5, -1.0]);
@@ -249,11 +271,23 @@ mod tests {
     #[test]
     fn source_uuid_dedups() {
         let s = Store::open_in_memory().unwrap();
-        assert!(s.insert_turn("s1", "user", "hello", 1000, Some("u-1")).unwrap().is_some());
-        assert!(s.insert_turn("s1", "user", "hello", 1000, Some("u-1")).unwrap().is_none());
+        assert!(s
+            .insert_turn("s1", "user", "hello", 1000, Some("u-1"))
+            .unwrap()
+            .is_some());
+        assert!(s
+            .insert_turn("s1", "user", "hello", 1000, Some("u-1"))
+            .unwrap()
+            .is_none());
         // untagged inserts never collide
-        assert!(s.insert_turn("s1", "user", "hello", 1000, None).unwrap().is_some());
-        assert!(s.insert_turn("s1", "user", "hello", 1000, None).unwrap().is_some());
+        assert!(s
+            .insert_turn("s1", "user", "hello", 1000, None)
+            .unwrap()
+            .is_some());
+        assert!(s
+            .insert_turn("s1", "user", "hello", 1000, None)
+            .unwrap()
+            .is_some());
         assert_eq!(s.turn_count().unwrap(), 3);
     }
 
@@ -291,7 +325,10 @@ mod tests {
         }
         let s = Store::open(&path).unwrap();
         assert_eq!(s.load_turns().unwrap().len(), 1);
-        assert!(s.insert_turn("s1", "user", "new", 2000, Some("u-1")).unwrap().is_some());
+        assert!(s
+            .insert_turn("s1", "user", "new", 2000, Some("u-1"))
+            .unwrap()
+            .is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

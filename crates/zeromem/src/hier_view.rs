@@ -27,7 +27,11 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
         return HashMap::new();
     }
     let bm25_scores = input.bm25.scores(&input.profile.keywords);
-    let bm25_max = bm25_scores.values().cloned().fold(0.0f32, f32::max).max(1e-6);
+    let bm25_max = bm25_scores
+        .values()
+        .cloned()
+        .fold(0.0f32, f32::max)
+        .max(1e-6);
     let base = |turn: u32| -> f32 {
         let dense = cosine(input.query_vec, &input.turn_vecs[turn as usize]).max(0.0);
         let lex = bm25_scores.get(&turn).copied().unwrap_or(0.0) / bm25_max;
@@ -105,7 +109,11 @@ fn compatibility(input: &HierViewInput, turn: u32) -> f32 {
         bonus += 0.25 * hits as f32 / p.subjects.len() as f32;
     }
     if !p.temporal.ranges.is_empty() {
-        let inside = p.temporal.ranges.iter().any(|(a, b)| t.ts >= *a && t.ts <= *b);
+        let inside = p
+            .temporal
+            .ranges
+            .iter()
+            .any(|(a, b)| t.ts >= *a && t.ts <= *b);
         bonus += if inside { 0.3 } else { 0.0 };
     }
     if let Some(boundary) = p.boundary {
@@ -120,7 +128,9 @@ fn compatibility(input: &HierViewInput, turn: u32) -> f32 {
     let type_hit = match p.answer_type {
         AnswerType::Time => has_kind(input, turn, EntityKind::Date),
         AnswerType::Number => has_kind(input, turn, EntityKind::Number),
-        AnswerType::Person | AnswerType::Entity | AnswerType::Place => has_kind(input, turn, EntityKind::Named),
+        AnswerType::Person | AnswerType::Entity | AnswerType::Place => {
+            has_kind(input, turn, EntityKind::Named)
+        }
         _ => false,
     };
     if type_hit {
