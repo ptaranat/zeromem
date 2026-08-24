@@ -191,18 +191,21 @@ impl Store {
     /// entities absent from `live_entities`, in one transaction.
     pub fn sweep_orphan_embeddings(&mut self, live_entities: &[&str]) -> Result<()> {
         let tx = self.conn.transaction()?;
-        tx.execute_batch(
-            "ALTER TABLE embeddings ADD COLUMN turn_id INTEGER;
-             CREATE INDEX IF NOT EXISTS embeddings_turn_id ON embeddings(turn_id);
-             UPDATE embeddings SET turn_id = CAST(key AS INTEGER) WHERE kind = 'turn' AND turn_id IS NULL;",
-        )?;
+        let has_turn_id = tx
+            .prepare("SELECT 1 FROM pragma_table_info('embeddings') WHERE name = 'turn_id'")?
+            .exists([])?;
+        if !has_turn_id {
+            tx.execute_batch(
+                "ALTER TABLE embeddings ADD COLUMN turn_id INTEGER;
+                 CREATE INDEX IF NOT EXISTS embeddings_turn_id ON embeddings(turn_id);
+                 UPDATE embeddings SET turn_id = CAST(key AS INTEGER) WHERE kind = 'turn';",
+            )?;
+        }
         tx.execute(
             "DELETE FROM embeddings WHERE kind = 'turn'
-             AND turn_id IS NOT NULL
              AND turn_id NOT IN (SELECT id FROM turns)",
             [],
         )?;
-        tx.execute("DELETE FROM embeddings WHERE kind = 'turn' AND turn_id IS NULL", [])?;
         tx.execute("CREATE TEMP TABLE live_entity (key TEXT PRIMARY KEY)", [])?;
         {
             let mut ins = tx.prepare("INSERT OR IGNORE INTO live_entity (key) VALUES (?1)")?;
@@ -299,6 +302,32 @@ mod tests {
         assert_eq!(s.load_turns_after(0).unwrap().len(), 2);
         assert_eq!(s.load_turns_after(1).unwrap().len(), 1);
         assert_eq!(s.load_turns_after(2).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn sweep_is_idempotent_and_cleans_turn_rows() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s
+            .insert_turn("s1", "user", "hello", 1000, None)
+            .unwrap()
+            .unwrap();
+        let gone = s
+            .insert_turn("s1", "user", "bye", 1001, None)
+            .unwrap()
+            .unwrap();
+        s.put_embedding("turn", &t.id.to_string(), &[0.5]).unwrap();
+        s.put_embedding("turn", &gone.id.to_string(), &[0.5])
+            .unwrap();
+        s.put_embedding("entity", "carrie", &[0.5]).unwrap();
+        s.conn
+            .execute("DELETE FROM turns WHERE id = ?1", [gone.id])
+            .unwrap();
+
+        s.sweep_orphan_embeddings(&["carrie"]).unwrap();
+        assert!(s.embedding("turn", &t.id.to_string()).unwrap().is_some());
+        assert_eq!(s.embedding("turn", &gone.id.to_string()).unwrap(), None);
+        // second sweep: the turn_id migration must not re-run
+        s.sweep_orphan_embeddings(&["carrie"]).unwrap();
     }
 
     #[test]
