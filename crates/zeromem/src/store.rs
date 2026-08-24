@@ -182,8 +182,7 @@ impl Store {
     }
 
     /// Deletes cache rows for turns no longer in the turns table and for
-    /// entities absent from `live_entities`, in one transaction. The turn
-    /// side keys off an indexed integer column rather than a text CAST.
+    /// entities absent from `live_entities`, in one transaction.
     pub fn sweep_orphan_embeddings(&mut self, live_entities: &[&str]) -> Result<()> {
         let tx = self.conn.transaction()?;
         tx.execute_batch(
