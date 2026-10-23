@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import queue
+import re
 import threading
 import time
 from pathlib import Path
@@ -65,11 +66,31 @@ _FORGET_SCHEMA = {
 }
 
 
-def _format_evidence(evidence: List[Dict[str, Any]]) -> str:
+# Group-chat user turns carry an injected "Historical room context" block:
+# stale background at ingest time, 10-20k chars per turn. Drop it before
+# archiving so recall can't replay room transcripts verbatim.
+_ROOM_CONTEXT_RE = re.compile(
+    r"\n+Historical room context from other threads[^\n]*\n"
+    r".*?(?=\nNew messages in the room|\nRules for this room|\Z)",
+    re.DOTALL,
+)
+
+
+def _strip_room_context(text: str) -> str:
+    if "Historical room context" not in text:
+        return text
+    return _ROOM_CONTEXT_RE.sub("\n", text)
+
+
+def _format_evidence(evidence: List[Dict[str, Any]], max_items: int = 5,
+                     max_chars_per_item: int = 1500) -> str:
     lines = []
-    for e in evidence:
+    for e in evidence[:max_items]:
         tag = time.strftime("%Y-%m-%d", time.gmtime(e["ts"])) if e.get("ts") else "?"
-        lines.append(f"- [{e['session_id']} #{e['session_turn']} {e['speaker']} {tag}] {e['text']}")
+        text = e["text"]
+        if max_chars_per_item and len(text) > max_chars_per_item:
+            text = text[:max_chars_per_item] + f" … [truncado de {len(e['text'])}c]"
+        lines.append(f"- [{e['session_id']} #{e['session_turn']} {e['speaker']} {tag}] {text}")
     return "\n".join(lines)
 
 
@@ -171,14 +192,21 @@ class ZeroMemProvider(MemoryProvider):
         evidence = [e for e in evidence if e.get("session_id") != self._session_id]
         if not evidence:
             return ""
-        return "Recalled from past sessions (verbatim, with provenance):\n" + _format_evidence(evidence)
+        return (
+            "Recalled from past sessions (verbatim, with provenance):\n"
+            + _format_evidence(
+                evidence,
+                max_items=self._config.get("recall_max_items", 3),
+                max_chars_per_item=self._config.get("recall_max_chars_per_item", 1500),
+            )
+        )
 
     def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "", messages=None) -> None:
         if self._read_only or not self._mem:
             return
         sid = session_id or self._session_id
         if user_content and user_content.strip():
-            self._writes.put((sid, "user", user_content))
+            self._writes.put((sid, "user", _strip_room_context(user_content)))
         if assistant_content and assistant_content.strip():
             self._writes.put((sid, "assistant", assistant_content))
 
@@ -195,6 +223,12 @@ class ZeroMemProvider(MemoryProvider):
             if tool_name == "zeromem_recall":
                 with self._lock:
                     result = self._mem.query(args["query"], args.get("top_k"))
+                # bounded replay: a 12k verbatim turn in a tool result is the same
+                # context bloat as an oversized prefetch
+                result["evidence"] = [
+                    {**e, "text": e["text"][:6000] + f" … [truncado de {len(e['text'])}c]" if len(e["text"]) > 6000 else e["text"]}
+                    for e in result.get("evidence", [])
+                ]
                 return json.dumps(result)
             if tool_name == "zeromem_stats":
                 with self._lock:
