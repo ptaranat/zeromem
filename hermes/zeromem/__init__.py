@@ -82,6 +82,40 @@ def _strip_room_context(text: str) -> str:
     return _ROOM_CONTEXT_RE.sub("\n", text)
 
 
+# Harness plumbing the host injects around real conversation. Stripped before
+# ingest so it can't seed the entity graph / BM25 or get recalled verbatim.
+# Conservative by design: strip known boilerplate, keep the real message. A
+# turn that is nothing but a drop-marker is dropped wholesale.
+_MEMORY_CONTEXT_RE = re.compile(r"<memory-context>.*?</memory-context>\s*", re.DOTALL)
+_CONTEXT_WARNINGS_RE = re.compile(r"\n*-{3,}\s*Context Warnings\s*-{3,}.*\Z", re.DOTALL)
+_GROUP_HEADER_RE = re.compile(r"^\[Group chat:[^\n]*\][^\n]*\n", re.MULTILINE)
+_ROOM_RULES_RE = re.compile(r"\n+Rules for this room:.*\Z", re.DOTALL)
+# Turns that are entirely harness telemetry, not conversation -> drop.
+_DROP_TURN_RE = re.compile(
+    r"^\[System note:|^\[ASYNC DELEGATION"
+    r"|^\[IMPORTANT:\s*(?:\d+\s+background processes?|Background process\b)"
+)
+
+
+def _clean_turn(text: str) -> str:
+    """Strip harness plumbing from a turn; return '' to drop the turn."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    if _DROP_TURN_RE.match(t):
+        logger.debug("zeromem: dropping harness turn: %.60s", t)
+        return ""
+    t = _MEMORY_CONTEXT_RE.sub("", t)
+    t = _CONTEXT_WARNINGS_RE.sub("", t)
+    t = _GROUP_HEADER_RE.sub("", t)
+    t = _ROOM_RULES_RE.sub("", t)
+    t = t.strip()
+    if not t:
+        logger.debug("zeromem: dropping turn emptied by harness-strip: %.60s", text)
+        return ""
+    return t
+
+
 def _format_evidence(evidence: List[Dict[str, Any]], max_items: int = 5,
                      max_chars_per_item: int = 1500) -> str:
     lines = []
@@ -190,6 +224,12 @@ class ZeroMemProvider(MemoryProvider):
         evidence = result.get("evidence", [])
         # current-session turns are already in context
         evidence = [e for e in evidence if e.get("session_id") != self._session_id]
+        # Relevance floor. Fused scores are per-query min-max (fuse.rs), so a
+        # weak query still ranks its best-of-garbage high; this drops the weak
+        # tail so the auto-inject only fires on clear matches. 0 disables.
+        floor = float(self._config.get("recall_min_score", 0.6))
+        if floor > 0:
+            evidence = [e for e in evidence if float(e.get("score", 0.0)) >= floor]
         if not evidence:
             return ""
         return (
@@ -205,10 +245,12 @@ class ZeroMemProvider(MemoryProvider):
         if self._read_only or not self._mem:
             return
         sid = session_id or self._session_id
-        if user_content and user_content.strip():
-            self._writes.put((sid, "user", _strip_room_context(user_content)))
-        if assistant_content and assistant_content.strip():
-            self._writes.put((sid, "assistant", assistant_content))
+        user_clean = _clean_turn(_strip_room_context(user_content)) if user_content else ""
+        if user_clean:
+            self._writes.put((sid, "user", user_clean))
+        asst_clean = _clean_turn(assistant_content) if assistant_content else ""
+        if asst_clean:
+            self._writes.put((sid, "assistant", asst_clean))
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = [_RECALL_SCHEMA, _STATS_SCHEMA]
@@ -268,6 +310,10 @@ class ZeroMemProvider(MemoryProvider):
             {"key": "db_path", "description": "SQLite database path (default: HERMES_HOME/memory/zeromem.db)"},
             {"key": "use_model", "description": "Use the ONNX embedder; false falls back to hashing",
              "type": "boolean", "default": True},
+            {"key": "recall_min_score", "description": "Min fused score for auto-injected recall; below this nothing is injected (0 disables)",
+             "type": "number", "default": 0.6},
+            {"key": "recall_max_items", "description": "Max auto-injected recall items",
+             "type": "integer", "default": 3},
         ]
 
     def save_config(self, values: Dict[str, Any], hermes_home: str) -> None:

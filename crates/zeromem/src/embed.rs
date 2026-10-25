@@ -106,8 +106,8 @@ mod fast {
     use crate::error::Error;
     use std::sync::Mutex;
 
-    /// bge-small-en-v1.5 via fastembed/onnxruntime. Downloads the model into
-    /// `cache_dir` on first use.
+    /// intfloat/multilingual-e5-small (ES/EN + ~100 langs) via fastembed/onnxruntime.
+    /// 384 dims, CPU-friendly. Downloads the model into `cache_dir` on first use.
     pub struct FastEmbedder {
         model: Mutex<fastembed::TextEmbedding>,
         dim: usize,
@@ -115,7 +115,7 @@ mod fast {
 
     impl FastEmbedder {
         pub fn new(cache_dir: &std::path::Path) -> Result<Self> {
-            let opts = fastembed::InitOptions::new(fastembed::EmbeddingModel::BGESmallENV15)
+            let opts = fastembed::InitOptions::new(fastembed::EmbeddingModel::MultilingualE5Small)
                 .with_cache_dir(cache_dir.to_path_buf());
             let model =
                 fastembed::TextEmbedding::try_new(opts).map_err(|e| Error::Embed(e.to_string()))?;
@@ -128,7 +128,7 @@ mod fast {
 
     impl Embedder for FastEmbedder {
         fn id(&self) -> String {
-            "bge-small-en-v1.5".into()
+            "multilingual-e5-small".into()
         }
 
         fn dim(&self) -> usize {
