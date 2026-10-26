@@ -102,9 +102,49 @@ impl ZeroMem {
     }
 }
 
+/// Standalone access to the core's default embedder, so external tooling (e.g.
+/// the backfill script) can produce vectors with the EXACT model and
+/// normalization the store uses, without opening a store handle. This keeps the
+/// embedder a single source of truth: whatever model the core uses, this
+/// mirrors — no hardcoded model in the tooling.
+#[pyclass]
+struct Embedder {
+    inner: Mutex<Box<dyn zm::embed::Embedder>>,
+}
+
+#[pymethods]
+impl Embedder {
+    /// Embedder(model_cache_dir=None)
+    #[new]
+    #[pyo3(signature = (model_cache_dir = None))]
+    fn new(model_cache_dir: Option<&str>) -> PyResult<Self> {
+        let inner = zm::default_embedder(model_cache_dir.map(std::path::Path::new));
+        Ok(Self {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    /// id() -> the embedder's cache-namespace tag (e.g. "multilingual-e5-small").
+    fn id(&self) -> PyResult<String> {
+        Ok(self.inner.lock().unwrap().id())
+    }
+
+    /// dim() -> embedding dimensionality.
+    fn dim(&self) -> usize {
+        self.inner.lock().unwrap().dim()
+    }
+
+    /// embed(texts) -> one vector per input text.
+    fn embed(&self, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+        let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+        self.inner.lock().unwrap().embed(&refs).map_err(err)
+    }
+}
+
 #[pymodule(name = "zeromem")]
 fn zeromem_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ZeroMem>()?;
+    m.add_class::<Embedder>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

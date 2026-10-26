@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+- `zeromem-py`: expose `zeromem.Embedder(model_cache_dir)` — standalone access to the
+  core's default embedder (`id()`, `dim()`, `embed(texts)`), so external tooling can
+  produce vectors with the exact model + normalization the store uses, without a store
+  handle. The embedder stays a single source of truth across switches.
+- `scripts/strip_room_context_backfill.py`: re-embed via the core's own embedder
+  (no more hardcoded bge-small) and add an embedder-tag guard, so the backfill stays
+  correct across embedder switches (e.g. the move to `intfloat/multilingual-e5-small`).
+
 ## [0.3.0] - 2026-08-20
 
 Claude Code integration.
