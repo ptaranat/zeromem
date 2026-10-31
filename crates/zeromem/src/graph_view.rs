@@ -4,7 +4,7 @@
 use crate::config::Config;
 use crate::embed::cosine;
 use crate::graph::EntityGraph;
-use crate::lexical::phrase_matches;
+use crate::lexical::{phrase_matches, Bm25};
 use crate::profile::QueryProfile;
 use crate::trace::Turn;
 use std::collections::HashMap;
@@ -15,6 +15,7 @@ pub struct GraphViewInput<'a> {
     pub turn_vecs: &'a [Vec<f32>],
     pub entity_vecs: &'a [Vec<f32>],
     pub query_vec: &'a [f32],
+    pub bm25: &'a Bm25,
     pub profile: &'a QueryProfile,
 }
 
@@ -28,11 +29,17 @@ pub fn retrieve(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32> {
     let activations = seed_and_propagate(input, cfg);
     let pi = personalized_pagerank(input, &activations, cfg);
 
+    let pi_max = pi.iter().cloned().fold(0.0f32, f32::max).max(1e-12);
+    let lexical = input.bm25.scores(&input.profile.keywords);
+    let lex_max = lexical.values().cloned().fold(0.0f32, f32::max).max(1e-6);
+
     let mut scores: HashMap<u32, f32> = HashMap::new();
     for (turn, score) in pi.iter().enumerate() {
-        if *score > 0.0 {
+        let lex = lexical.get(&(turn as u32)).copied().unwrap_or(0.0) / lex_max;
+        if *score > 0.0 || lex > 0.0 {
             let boost = phrase_matches(&input.profile.phrases, &input.turns[turn].text) as f32;
-            scores.insert(turn as u32, score * (1.0 + 0.25 * boost));
+            let s = score / pi_max * (1.0 + 0.25 * boost) + cfg.graph_lexical_weight * lex;
+            scores.insert(turn as u32, s);
         }
     }
     scores
@@ -211,4 +218,60 @@ fn adjacent(t: usize, nt: usize, turns: &[Turn]) -> Vec<usize> {
         out.push(t + 1);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ner::{EntityExtractor, HeuristicNer};
+    use crate::profile::build_profile;
+    use crate::text::tokenize;
+
+    #[test]
+    fn lexical_overlap_scores_without_entity_or_dense_signal() {
+        let texts = [
+            "the weather was nice today",
+            "the zeppelin tour got moved to friday",
+            "we restocked the tote bags",
+        ];
+        let turns: Vec<Turn> = texts
+            .iter()
+            .enumerate()
+            .map(|(i, text)| Turn {
+                id: i as i64,
+                session_id: "s1".into(),
+                session_turn: i as i64,
+                speaker: "user".into(),
+                text: (*text).into(),
+                ts: 1000 + i as i64,
+            })
+            .collect();
+        let mut graph = EntityGraph::default();
+        let mut bm25 = Bm25::default();
+        for (i, t) in turns.iter().enumerate() {
+            graph.add_turn(i as u32, &HeuristicNer.extract(&t.text));
+            bm25.add_doc(&tokenize(&t.text));
+        }
+        let zero = vec![0.0f32; 8];
+        let turn_vecs = vec![zero.clone(); turns.len()];
+        let profile = build_profile("when is the zeppelin tour?", &HeuristicNer);
+
+        let scores = retrieve(
+            &GraphViewInput {
+                graph: &graph,
+                turns: &turns,
+                turn_vecs: &turn_vecs,
+                entity_vecs: &[],
+                query_vec: &zero,
+                bm25: &bm25,
+                profile: &profile,
+            },
+            &Config::default(),
+        );
+        let best = scores
+            .iter()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .map(|(t, _)| *t);
+        assert_eq!(best, Some(1), "{scores:?}");
+    }
 }

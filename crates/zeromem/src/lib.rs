@@ -368,6 +368,7 @@ impl ZeroMem {
                 turn_vecs: &self.turn_vecs,
                 entity_vecs: &self.entity_vecs,
                 query_vec: &query_vec,
+                bm25: &self.bm25,
                 profile: &profile,
             },
             &cfg,
