@@ -352,6 +352,13 @@ impl ZeroMem {
                 .min(cfg.top_k);
             cfg.top_k += bump;
         }
+        // "last session" means the last one before the excluded (current) one
+        let session_order: Vec<String> = self
+            .session_order
+            .iter()
+            .filter(|s| Some(*s) != self.excluded_session.as_ref())
+            .cloned()
+            .collect();
         let query_vec = self.embedder.embed(&[query])?.pop().unwrap_or_default();
 
         let graph_scores = graph_view::retrieve(
@@ -374,7 +381,7 @@ impl ZeroMem {
                 query_vec: &query_vec,
                 bm25: &self.bm25,
                 profile: &profile,
-                session_order: &self.session_order,
+                session_order: &session_order,
             },
             &cfg,
         );
@@ -386,7 +393,7 @@ impl ZeroMem {
         }
         cfg.top_k = requested;
         let final_set =
-            calibrate::calibrate_evidence(closed, &self.turns, &profile, &self.session_order, &cfg);
+            calibrate::calibrate_evidence(closed, &self.turns, &profile, &session_order, &cfg);
 
         let evidence: Vec<Evidence> = final_set
             .into_iter()
@@ -589,6 +596,33 @@ mod tests {
             .count();
         assert_eq!(mains, 4, "{result:?}");
         assert!(result.evidence.len() > mains, "supports were dropped");
+    }
+
+    #[test]
+    fn last_session_skips_the_excluded_current_session() {
+        let mut zm =
+            ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        zm.ingest_turn("a", "user", "Carrie ordered the Slowdive vinyl.", 1000)
+            .unwrap();
+        zm.ingest_turn(
+            "b",
+            "user",
+            "We moved the vinyl bins by the register.",
+            2000,
+        )
+        .unwrap();
+        zm.ingest_turn("cur", "user", "What did we talk about last session?", 3000)
+            .unwrap();
+
+        zm.exclude_session(Some("cur"));
+        let result = zm
+            .query("What did we talk about in the last session?", None)
+            .unwrap();
+        assert!(!result.evidence.is_empty());
+        assert!(
+            result.evidence.iter().all(|e| e.session_id == "b"),
+            "{result:?}"
+        );
     }
 
     #[test]

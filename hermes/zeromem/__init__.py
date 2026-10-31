@@ -161,14 +161,13 @@ class ZeroMemProvider(MemoryProvider):
         if not self._mem or not query or not query.strip():
             return ""
         try:
+            # current-session turns are already in context
             with self._lock:
-                result = self._mem.query(query, None)
+                result = self._mem.query(query, None, self._session_id or None)
         except Exception:
             logger.exception("zeromem: query failed")
             return ""
         evidence = result.get("evidence", [])
-        # current-session turns are already in context
-        evidence = [e for e in evidence if e.get("session_id") != self._session_id]
         if not evidence:
             return ""
         return "Recalled from past sessions (verbatim, with provenance):\n" + _format_evidence(evidence)
@@ -194,7 +193,7 @@ class ZeroMemProvider(MemoryProvider):
         try:
             if tool_name == "zeromem_recall":
                 with self._lock:
-                    result = self._mem.query(args["query"], args.get("top_k"))
+                    result = self._mem.query(args["query"], args.get("top_k"), self._session_id or None)
                 return json.dumps(result)
             if tool_name == "zeromem_stats":
                 with self._lock:
