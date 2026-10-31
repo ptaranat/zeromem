@@ -27,6 +27,8 @@ pub struct Config {
     pub episode_beam: usize,
     /// Windows kept in the coarse-to-fine pass.
     pub window_beam: usize,
+    /// BM25 added to graph-view scores, relative to max-normalized PPR mass.
+    pub graph_lexical_weight: f32,
 }
 
 impl Default for Config {
@@ -45,6 +47,7 @@ impl Default for Config {
             ppr_iters: 30,
             episode_beam: 4,
             window_beam: 8,
+            graph_lexical_weight: 1.0,
         }
     }
 }
