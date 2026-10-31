@@ -35,11 +35,14 @@ def main() -> None:
         time.sleep(0.05)
     assert stats["turns"] >= 4, stats
 
+    # the active session is already in context, so recall skips it
+    out = json.loads(provider.handle_tool_call("zeromem_recall", {"query": "What breed is Lychee?"}))
+    assert not out["evidence"], out["evidence"]
+
+    provider.on_session_switch("session-b", reset=True)
     out = json.loads(provider.handle_tool_call("zeromem_recall", {"query": "What breed is Lychee?"}))
     texts = [e["text"] for e in out["evidence"]]
     assert any("corgi" in t for t in texts), texts
-
-    provider.on_session_switch("session-b", reset=True)
     block = provider.prefetch("What breed is Lychee?", session_id="session-b")
     assert "corgi" in block, block
     assert "session-a" in block, block

@@ -76,11 +76,22 @@ impl ZeroMem {
         self.inner.lock().unwrap().delete_session(session_id).map_err(err)
     }
 
-    /// query(text, top_k=None) -> {"route": ..., "evidence": [...]}
-    #[pyo3(signature = (text, top_k = None))]
-    fn query(&self, py: Python<'_>, text: &str, top_k: Option<usize>) -> PyResult<PyObject> {
-        let result = self.inner.lock().unwrap().query(text, top_k).map_err(err)?;
-        json_out(py, &result)
+    /// query(text, top_k=None, exclude_session=None) -> {"route": ..., "evidence": [...]}
+    /// exclude_session drops that session from results and from session-boundary
+    /// counting, so "last session" means the one before it.
+    #[pyo3(signature = (text, top_k = None, exclude_session = None))]
+    fn query(
+        &self,
+        py: Python<'_>,
+        text: &str,
+        top_k: Option<usize>,
+        exclude_session: Option<&str>,
+    ) -> PyResult<PyObject> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.exclude_session(exclude_session);
+        let result = inner.query(text, top_k);
+        inner.exclude_session(None);
+        json_out(py, &result.map_err(err)?)
     }
 
     /// calibrate_answer(query, answer, evidence_texts) -> {"answer", "changed", "supported", "candidates"}

@@ -92,8 +92,9 @@ memory:
 ```
 
 The provider syncs turns in a background thread, prefetches evidence before
-each turn, and exposes `zeromem_recall` and `zeromem_stats` tools. Verify with
-`just pysmoke`.
+each turn, and exposes `zeromem_recall` and `zeromem_stats` tools. Prefetch
+and recall skip the active session, which is already in context, so "last
+session" means the one before it. Verify with `just pysmoke`.
 
 ## Claude Code
 
