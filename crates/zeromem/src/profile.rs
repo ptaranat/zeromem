@@ -171,9 +171,6 @@ fn temporal_cues(lower: &str, entities: &[Entity]) -> TemporalCues {
     ] {
         if lower.contains(marker) {
             cues.mentions.push(marker.to_string());
-            if cues.prefer.is_none() {
-                cues.prefer = Some(RecencyPref::Latest);
-            }
         }
     }
     cues
@@ -327,6 +324,22 @@ mod tests {
     fn boundary_first_session() {
         let p = build_profile("What did I say in the first conversation?", &HeuristicNer);
         assert_eq!(p.boundary, Some(Boundary::SessionOrdinal(0)));
+    }
+
+    #[test]
+    fn relative_time_words_are_mentions_not_recency() {
+        let p = build_profile(
+            "When did Carrie say the order shipped last week?",
+            &HeuristicNer,
+        );
+        assert!(p.temporal.mentions.iter().any(|m| m == "last week"));
+        assert_eq!(p.temporal.prefer, None);
+
+        let p = build_profile(
+            "What is the latest price for the Slowdive vinyl?",
+            &HeuristicNer,
+        );
+        assert_eq!(p.temporal.prefer, Some(RecencyPref::Latest));
     }
 
     #[test]
