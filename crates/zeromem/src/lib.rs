@@ -380,7 +380,11 @@ impl ZeroMem {
         );
 
         let main = fuse::fuse(&graph_scores, &hier_scores, gw, hw, cfg.top_k);
-        let closed = closure::close(&main, &self.graph, &self.turns, &cfg);
+        let mut closed = closure::close(&main, &self.graph, &self.turns, &cfg);
+        if let Some(sid) = &self.excluded_session {
+            closed.retain(|s| self.turns[s.turn as usize].session_id != *sid);
+        }
+        cfg.top_k = requested;
         let final_set =
             calibrate::calibrate_evidence(closed, &self.turns, &profile, &self.session_order, &cfg);
 
@@ -400,20 +404,7 @@ impl ZeroMem {
                 }
             })
             .collect();
-        Ok(QueryResult {
-            route,
-            evidence: {
-                let mut ev: Vec<Evidence> = match &self.excluded_session {
-                    Some(sid) => evidence
-                        .into_iter()
-                        .filter(|e| e.session_id != *sid)
-                        .collect(),
-                    None => evidence,
-                };
-                ev.truncate(requested);
-                ev
-            },
-        })
+        Ok(QueryResult { route, evidence })
     }
 
     pub fn calibrate_answer(
@@ -567,6 +558,37 @@ mod tests {
             "got {} items after excluding the dominant session",
             filtered.evidence.len()
         );
+    }
+
+    #[test]
+    fn query_returns_top_k_mains_with_supports() {
+        let mut zm =
+            ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
+        for (i, shelf) in ["front", "back", "register", "window", "basement", "attic"]
+            .iter()
+            .enumerate()
+        {
+            let session = format!("s{i}");
+            let ts = 1000 * (i as i64 + 1);
+            zm.ingest_turn(
+                &session,
+                "user",
+                &format!("Slowdive vinyl moved to the {shelf} shelf."),
+                ts,
+            )
+            .unwrap();
+            zm.ingest_turn(&session, "user", "Then we restocked the tote bags.", ts + 1)
+                .unwrap();
+        }
+
+        let result = zm.query("Slowdive vinyl shelf", Some(4)).unwrap();
+        let mains = result
+            .evidence
+            .iter()
+            .filter(|e| e.role == EvidenceRole::Main)
+            .count();
+        assert_eq!(mains, 4, "{result:?}");
+        assert!(result.evidence.len() > mains, "supports were dropped");
     }
 
     #[test]
