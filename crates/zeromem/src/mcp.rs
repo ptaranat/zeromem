@@ -8,6 +8,7 @@
 //! from other sessions.
 
 use crate::config::Config;
+use crate::embed::DenseModel;
 use crate::error::Result;
 use crate::spool;
 use crate::ZeroMem;
@@ -17,7 +18,8 @@ use std::path::PathBuf;
 
 pub struct Server {
     home: PathBuf,
-    use_model: bool,
+    /// None runs the hash embedder.
+    model: Option<DenseModel>,
     zm: Option<ZeroMem>,
     /// Set at startup when the embedder is the lexical fallback; consumed by
     /// the first recall, which then appends a warning to its result.
@@ -25,10 +27,10 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(home: PathBuf, use_model: bool) -> Self {
+    pub fn new(home: PathBuf, model: Option<DenseModel>) -> Self {
         Self {
             home,
-            use_model,
+            model,
             zm: None,
             warn_on_fallback: true,
         }
@@ -139,10 +141,9 @@ impl Server {
     fn open(&mut self) -> Result<&mut ZeroMem> {
         if self.zm.is_none() {
             let db = self.home.join("zeromem.db");
-            let embedder = if self.use_model {
-                crate::default_embedder(Some(&self.home.join("models")))
-            } else {
-                Box::new(crate::embed::HashEmbedder::default()) as Box<dyn crate::embed::Embedder>
+            let embedder = match self.model {
+                Some(m) => crate::dense_embedder(m, Some(&self.home.join("models"))),
+                None => Box::new(crate::embed::HashEmbedder::default()),
             };
             self.warn_on_fallback = embedder.is_fallback();
             self.zm = Some(ZeroMem::open(&db, Config::default(), embedder)?);
@@ -221,7 +222,7 @@ mod tests {
             }],
         )
         .unwrap();
-        let mut s = Server::new(home.clone(), false);
+        let mut s = Server::new(home.clone(), None);
         for (i, want) in [true, false].into_iter().enumerate() {
             let resp = call(
                 &mut s,
@@ -248,7 +249,7 @@ mod tests {
     #[test]
     fn handshake_and_tool_listing() {
         let home = temp_home("handshake");
-        let mut s = Server::new(home.clone(), false);
+        let mut s = Server::new(home.clone(), None);
         let init = call(
             &mut s,
             1,
@@ -294,7 +295,7 @@ mod tests {
             }],
         )
         .unwrap();
-        let mut s = Server::new(home.clone(), false);
+        let mut s = Server::new(home.clone(), None);
         let resp = call(
             &mut s,
             1,
@@ -332,7 +333,7 @@ mod tests {
             }],
         )
         .unwrap();
-        let mut s = Server::new(home.clone(), false);
+        let mut s = Server::new(home.clone(), None);
         let stats = call(
             &mut s,
             1,

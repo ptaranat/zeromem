@@ -112,10 +112,14 @@ class ZeroMemProvider(MemoryProvider):
                 logger.warning("zeromem: ignoring malformed %s", cfg_path)
         db = self._config.get("db_path") or str(hermes_home / "memory" / "zeromem.db")
         Path(db).parent.mkdir(parents=True, exist_ok=True)
+        use_model = self._config.get("use_model", True)
+        # only pass model when it applies, so the plugin still loads against an older wheel
+        model = {"model": self._config["model"]} if use_model and self._config.get("model") else {}
         self._mem = zeromem.ZeroMem(
             db,
-            use_model=self._config.get("use_model", True),
+            use_model=use_model,
             model_cache_dir=str(hermes_home / "memory" / "zeromem-models"),
+            **model,
         )
         if not self._read_only:
             self._writer = threading.Thread(target=self._drain_writes, daemon=True, name="zeromem-writer")
@@ -233,6 +237,9 @@ class ZeroMemProvider(MemoryProvider):
             {"key": "db_path", "description": "SQLite database path (default: HERMES_HOME/memory/zeromem.db)"},
             {"key": "use_model", "description": "Use the ONNX embedder; false falls back to hashing",
              "type": "boolean", "default": True},
+            {"key": "model", "description": "Dense embedder: bge-small-en-v1.5 (English) or multilingual-e5-small. "
+             "Changing it re-embeds the store on next start",
+             "default": "bge-small-en-v1.5"},
         ]
 
     def save_config(self, values: Dict[str, Any], hermes_home: str) -> None:

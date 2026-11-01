@@ -1,4 +1,4 @@
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::path::PathBuf;
@@ -47,12 +47,25 @@ struct ZeroMem {
 
 #[pymethods]
 impl ZeroMem {
-    /// open(path, use_model=True, model_cache_dir=None)
+    /// open(path, use_model=True, model_cache_dir=None, model=None)
+    ///
+    /// model: "bge-small-en-v1.5" (default) or "multilingual-e5-small".
     #[new]
-    #[pyo3(signature = (path, use_model = true, model_cache_dir = None))]
-    fn new(path: &str, use_model: bool, model_cache_dir: Option<&str>) -> PyResult<Self> {
+    #[pyo3(signature = (path, use_model = true, model_cache_dir = None, model = None))]
+    fn new(
+        path: &str,
+        use_model: bool,
+        model_cache_dir: Option<&str>,
+        model: Option<&str>,
+    ) -> PyResult<Self> {
+        let model: zm::embed::DenseModel = match model {
+            Some(name) => name
+                .parse()
+                .map_err(|e: zm::error::Error| PyValueError::new_err(e.to_string()))?,
+            None => Default::default(),
+        };
         let embedder = if use_model {
-            zm::default_embedder(model_cache_dir.map(std::path::Path::new))
+            zm::dense_embedder(model, model_cache_dir.map(std::path::Path::new))
         } else {
             Box::new(zm::embed::HashEmbedder::default()) as Box<dyn zm::embed::Embedder>
         };

@@ -41,6 +41,9 @@ Deviations from the paper: spaCy NER is replaced with a heuristic extractor
 behind a trait, BGE-M3 with bge-small-en-v1.5 through
 [fastembed](https://github.com/Anush008/fastembed-rs) (a deterministic hash
 embedder is the offline fallback and what tests use). Both are swappable.
+multilingual-e5-small is the other built-in dense model, for non-English
+conversations. Only the dense view changes with it: BM25 stopwords, relative
+time words, and entity extraction are still English-oriented.
 
 ## Build
 
@@ -54,6 +57,10 @@ cargo build --release
 
 The `fastembed` feature (default) pulls onnxruntime and downloads
 bge-small-en-v1.5 (~130MB) on first use. `--no-default-features` drops both.
+Pick the other model with `zm --model multilingual-e5-small` or
+`zeromem.ZeroMem(path, model="multilingual-e5-small")`. A store opened with a
+different model than it was written with re-embeds every turn on open, so
+switching needs no migration.
 
 CLI:
 
@@ -90,6 +97,10 @@ Set in `~/.hermes/config.yaml`:
 memory:
   provider: zeromem
 ```
+
+Options go in `~/.hermes/memory/zeromem.json`, e.g.
+`{"model": "multilingual-e5-small"}` for Spanish or other non-English
+conversations.
 
 The provider syncs turns in a background thread, prefetches evidence before
 each turn, and exposes `zeromem_recall` and `zeromem_stats` tools. Prefetch

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+- The dense embedder is selectable: `bge-small-en-v1.5` (default) or
+  `multilingual-e5-small`, via `zm --model`, `ZeroMem(..., model=)` in
+  Python, and `model` in the Hermes plugin's `zeromem.json`. An unknown name
+  is an error. Switching re-embeds the store on open. Thanks to gas for the
+  multilingual push in #8.
+- Rust: `default_embedder(dir)` is now `dense_embedder(model, dir)`, and
+  `mcp::Server::new` takes `Option<DenseModel>` in place of `use_model`.
+
 ## [0.3.0] - 2026-08-20
 
 Claude Code integration.
