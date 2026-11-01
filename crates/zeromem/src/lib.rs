@@ -359,7 +359,7 @@ impl ZeroMem {
             .filter(|s| Some(*s) != self.excluded_session.as_ref())
             .cloned()
             .collect();
-        let query_vec = self.embedder.embed(&[query])?.pop().unwrap_or_default();
+        let query_vec = self.embedder.embed_query(query)?;
 
         let graph_scores = graph_view::retrieve(
             &graph_view::GraphViewInput {
@@ -642,20 +642,20 @@ mod tests {
     }
 }
 
-/// Default embedder: fastembed when compiled in and loadable, hash otherwise.
-pub fn default_embedder(cache_dir: Option<&Path>) -> Box<dyn Embedder> {
+/// `model` via fastembed when compiled in and loadable, hash otherwise.
+pub fn dense_embedder(model: embed::DenseModel, cache_dir: Option<&Path>) -> Box<dyn Embedder> {
     #[cfg(feature = "fastembed")]
     {
         let dir = cache_dir
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::env::temp_dir().join("zeromem-models"));
-        match embed::FastEmbedder::new(&dir) {
+        match embed::FastEmbedder::new(&dir, model) {
             Ok(e) => return Box::new(e),
             Err(err) => {
                 eprintln!("zeromem: fastembed unavailable ({err}), falling back to hash embedder")
             }
         }
     }
-    let _ = cache_dir;
+    let _ = (model, cache_dir);
     Box::new(embed::HashEmbedder::default())
 }

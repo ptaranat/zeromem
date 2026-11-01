@@ -4,7 +4,13 @@ pub trait Embedder: Send + Sync {
     /// Cache namespace; changing it invalidates stored vectors.
     fn id(&self) -> String;
     fn dim(&self) -> usize;
+    /// Embeds stored content (turns, windows, entity contexts).
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
+    /// Embeds a search query. Models trained with asymmetric query and
+    /// passage prefixes override this.
+    fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
+        Ok(self.embed(&[query])?.pop().unwrap_or_default())
+    }
     /// True for lexical-only fallback embedders.
     fn is_fallback(&self) -> bool {
         false
@@ -97,6 +103,62 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     h
 }
 
+/// Dense models a store can embed with. `id` is the tag stored with each
+/// vector, so it must never change for an existing model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DenseModel {
+    #[default]
+    BgeSmallEnV15,
+    MultilingualE5Small,
+}
+
+impl DenseModel {
+    pub const ALL: [DenseModel; 2] = [DenseModel::BgeSmallEnV15, DenseModel::MultilingualE5Small];
+
+    /// The name hosts configure.
+    pub fn name(self) -> &'static str {
+        match self {
+            DenseModel::BgeSmallEnV15 => "bge-small-en-v1.5",
+            DenseModel::MultilingualE5Small => "multilingual-e5-small",
+        }
+    }
+
+    /// The tag stored with each vector. e5 stores written without its
+    /// prefixes already exist under the bare name, so the prefixed vectors
+    /// get their own tag rather than mixing with them.
+    pub fn id(self) -> &'static str {
+        match self {
+            DenseModel::BgeSmallEnV15 => "bge-small-en-v1.5",
+            DenseModel::MultilingualE5Small => "multilingual-e5-small+prefix",
+        }
+    }
+
+    /// (query, passage) prefixes the model was trained with.
+    pub fn prefixes(self) -> (&'static str, &'static str) {
+        match self {
+            DenseModel::BgeSmallEnV15 => ("", ""),
+            DenseModel::MultilingualE5Small => ("query: ", "passage: "),
+        }
+    }
+}
+
+impl std::str::FromStr for DenseModel {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|m| m.name() == s)
+            .ok_or_else(|| {
+                let known: Vec<&str> = Self::ALL.iter().map(|m| m.name()).collect();
+                crate::error::Error::Invalid(format!(
+                    "unknown embedding model {s:?}, expected one of: {}",
+                    known.join(", ")
+                ))
+            })
+    }
+}
+
 #[cfg(feature = "fastembed")]
 pub use fast::FastEmbedder;
 
@@ -106,21 +168,27 @@ mod fast {
     use crate::error::Error;
     use std::sync::Mutex;
 
-    /// bge-small-en-v1.5 via fastembed/onnxruntime. Downloads the model into
+    /// A [`DenseModel`] via fastembed/onnxruntime. Downloads the model into
     /// `cache_dir` on first use.
     pub struct FastEmbedder {
         model: Mutex<fastembed::TextEmbedding>,
+        kind: DenseModel,
         dim: usize,
     }
 
     impl FastEmbedder {
-        pub fn new(cache_dir: &std::path::Path) -> Result<Self> {
-            let opts = fastembed::InitOptions::new(fastembed::EmbeddingModel::BGESmallENV15)
+        pub fn new(cache_dir: &std::path::Path, kind: DenseModel) -> Result<Self> {
+            let fastembed_model = match kind {
+                DenseModel::BgeSmallEnV15 => fastembed::EmbeddingModel::BGESmallENV15,
+                DenseModel::MultilingualE5Small => fastembed::EmbeddingModel::MultilingualE5Small,
+            };
+            let opts = fastembed::InitOptions::new(fastembed_model)
                 .with_cache_dir(cache_dir.to_path_buf());
             let model =
                 fastembed::TextEmbedding::try_new(opts).map_err(|e| Error::Embed(e.to_string()))?;
             Ok(Self {
                 model: Mutex::new(model),
+                kind,
                 dim: 384,
             })
         }
@@ -128,7 +196,7 @@ mod fast {
 
     impl Embedder for FastEmbedder {
         fn id(&self) -> String {
-            "bge-small-en-v1.5".into()
+            self.kind.id().into()
         }
 
         fn dim(&self) -> usize {
@@ -136,12 +204,26 @@ mod fast {
         }
 
         fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            self.embed_prefixed(self.kind.prefixes().1, texts)
+        }
+
+        fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
+            Ok(self
+                .embed_prefixed(self.kind.prefixes().0, &[query])?
+                .pop()
+                .unwrap_or_default())
+        }
+    }
+
+    impl FastEmbedder {
+        fn embed_prefixed(&self, prefix: &str, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
             if texts.is_empty() {
                 return Ok(vec![]);
             }
+            let inputs: Vec<String> = texts.iter().map(|t| format!("{prefix}{t}")).collect();
             let model = self.model.lock().unwrap();
             let mut vecs = model
-                .embed(texts.to_vec(), None)
+                .embed(inputs, None)
                 .map_err(|e| Error::Embed(e.to_string()))?;
             vecs.iter_mut().for_each(|v| l2_normalize(v));
             Ok(vecs)
@@ -152,6 +234,16 @@ mod fast {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dense_model_ids_round_trip() {
+        for m in DenseModel::ALL {
+            assert_eq!(m.name().parse::<DenseModel>().unwrap(), m);
+        }
+        assert_eq!(DenseModel::default().id(), "bge-small-en-v1.5");
+        let err = "e5".parse::<DenseModel>().unwrap_err().to_string();
+        assert!(err.contains("multilingual-e5-small"), "{err}");
+    }
 
     #[test]
     fn hash_embedder_similarity_ordering() {

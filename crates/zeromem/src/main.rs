@@ -1,13 +1,15 @@
 use std::path::PathBuf;
-use zeromem::{config::Config, default_embedder, embed::HashEmbedder, ZeroMem};
+use zeromem::{config::Config, dense_embedder, embed::DenseModel, ZeroMem};
 
-const USAGE: &str = "usage: zm [--db PATH] [--no-model] <command>
+const USAGE: &str = "usage: zm [--db PATH] [--no-model | --model NAME] <command>
 commands:
   ingest <file.jsonl>   lines: {\"session_id\", \"speaker\", \"text\", \"ts\"?}
   query <text> [-k N]
   stats
   mcp [--home PATH]     stdio MCP server for Claude Code (db at HOME/zeromem.db)
   hook                  Claude Code Stop/SessionEnd hook; reads event JSON on stdin
+--model picks the dense embedder: bge-small-en-v1.5 (default) or
+multilingual-e5-small. Changing it re-embeds the store on next open.
 ZEROMEM_HOME overrides the default ~/.zeromem home for mcp and hook.";
 
 fn main() {
@@ -33,6 +35,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         args.remove(i);
         no_model = true;
     }
+    let mut model = DenseModel::default();
+    if let Some(i) = args.iter().position(|a| a == "--model") {
+        args.remove(i);
+        if i >= args.len() {
+            return Err(USAGE.into());
+        }
+        model = args.remove(i).parse()?;
+    }
+    let model = (!no_model).then_some(model);
     let mut home = zeromem::spool::default_home();
     if let Some(i) = args.iter().position(|a| a == "--home") {
         args.remove(i);
@@ -45,7 +56,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // mcp and hook manage their own store; no embedder up front
     match args.first().map(String::as_str).unwrap_or("") {
         "mcp" => {
-            return Ok(zeromem::mcp::Server::new(home, !no_model).serve()?);
+            return Ok(zeromem::mcp::Server::new(home, model).serve()?);
         }
         "hook" => {
             let mut input = String::new();
@@ -59,10 +70,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     }
 
-    let embedder = if no_model {
-        Box::new(HashEmbedder::default()) as Box<dyn zeromem::embed::Embedder>
-    } else {
-        default_embedder(None)
+    let embedder = match model {
+        Some(m) => dense_embedder(m, None),
+        None => Box::new(zeromem::embed::HashEmbedder::default()),
     };
 
     let cmd = args.first().map(String::as_str).unwrap_or("");
