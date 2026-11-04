@@ -7,3 +7,5 @@ provides_tools:
   - zeromem_stats
   - zeromem_forget_session
 dependencies: []
+python_dependencies:
+  - zeromem>=0.4,<0.5
