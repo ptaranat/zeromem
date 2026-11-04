@@ -26,7 +26,7 @@ jobs:
           - { runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, manylinux: "2_28", smoke: true }
           - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, manylinux: "2_28", smoke: true }
           - { runner: macos-latest, target: aarch64-apple-darwin, smoke: true }
-          - { runner: macos-latest, target: x86_64-apple-darwin, smoke: false }
+          - { runner: macos-15-intel, target: x86_64-apple-darwin, smoke: true }
           - { runner: windows-latest, target: x86_64-pc-windows-msvc, smoke: true }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,6 +41,10 @@ jobs:
         if: matrix.smoke
         shell: bash
         run: uv run --isolated --no-project --python 3.14 --with dist/*.whl hermes/zeromem/smoke.py
+      - name: Load the embedder from the wheel
+        if: matrix.smoke
+        shell: bash
+        run: uv run --isolated --no-project --python 3.14 --with dist/*.whl scripts/model-smoke.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheel-${{ matrix.target }}
