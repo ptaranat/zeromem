@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 thiserror = "2"
-fastembed = { version = "4", optional = true }
+fastembed = { version = "4", optional = true, default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
 
 [[bin]]
 name = "zm"
