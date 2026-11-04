@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "zeromem"
+description = "Zero-token memory for LLM agents: provenance-preserving retrieval over raw traces. Rust core, single SQLite file."
+readme = "../../README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "Panat Taranat", email = "panat@taranat.com" }]
+keywords = ["agents", "memory", "retrieval", "hermes"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/ptaranat/zeromem"
