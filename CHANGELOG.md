@@ -31,7 +31,6 @@ size).
   multilingual push in #8.
 - Rust: `default_embedder(dir)` is now `dense_embedder(model, dir)`, and
   `mcp::Server::new` takes `Option<DenseModel>` in place of `use_model`.
-||||||| Stash base
 - Published to PyPI as `zeromem`, with `abi3` wheels for Linux, macOS and
   Windows. Model downloads use rustls, so the wheels need no system OpenSSL.
 - The Hermes plugin registers through `register(ctx)`, declares the wheel in
