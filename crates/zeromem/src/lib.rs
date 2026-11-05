@@ -496,7 +496,6 @@ mod tests {
         assert_eq!(b.stats().turns, 1);
         assert_eq!(b.refresh().unwrap(), 0);
 
-        // both sides ingest; each catches up to the other
         b.ingest_turn("s2", "user", "Slowdive played the Fillmore.", 2000)
             .unwrap();
         assert_eq!(a.refresh().unwrap(), 1);
@@ -515,10 +514,8 @@ mod tests {
         assert_eq!(b.stats().turns, 2);
 
         a.delete_session("drop").unwrap();
-        // a stays on the fast path for its own delete
         assert_eq!(a.refresh().unwrap(), 0);
         assert_eq!(a.stats().turns, 1);
-        // b sees the generation change and rebuilds
         b.refresh().unwrap();
         assert_eq!(b.stats().turns, 1);
         assert_eq!(b.stats().sessions, 1);
@@ -529,8 +526,6 @@ mod tests {
     fn exclude_session_still_returns_full_top_k() {
         let mut zm =
             ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
-        // current session dominates the top of the ranking; other sessions
-        // hold plenty of matching turns further down
         zm.ingest_turn("cur", "user", "Carrie ordered Slowdive vinyl.", 1000)
             .unwrap();
         zm.ingest_turn("a", "user", "Slowdive vinyl arrived at the shop.", 2000)
@@ -559,8 +554,6 @@ mod tests {
             filtered.evidence.iter().all(|e| e.session_id != "cur"),
             "{filtered:?}"
         );
-        // over-fetch keeps the result set full instead of shrinking to
-        // top_k minus excluded hits
         assert!(
             filtered.evidence.len() >= 4,
             "got {} items after excluding the dominant session",

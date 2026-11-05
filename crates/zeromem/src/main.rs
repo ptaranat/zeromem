@@ -53,7 +53,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         home = PathBuf::from(args.remove(i));
     }
 
-    // mcp and hook manage their own store; no embedder up front
     match args.first().map(String::as_str).unwrap_or("") {
         "mcp" => {
             return Ok(zeromem::mcp::Server::new(home, model).serve()?);

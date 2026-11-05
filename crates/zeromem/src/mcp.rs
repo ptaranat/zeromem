@@ -259,7 +259,6 @@ mod tests {
         assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(init["result"]["serverInfo"]["name"], "zeromem");
 
-        // notification: no response
         assert!(s
             .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             .is_none());
@@ -306,7 +305,6 @@ mod tests {
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("Slowdive vinyl"), "{text}");
 
-        // exclude_session filters everything from that session out
         let resp = call(
             &mut s,
             2,

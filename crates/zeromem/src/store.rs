@@ -282,7 +282,6 @@ mod tests {
             .insert_turn("s1", "user", "hello", 1000, Some("u-1"))
             .unwrap()
             .is_none());
-        // untagged inserts never collide
         assert!(s
             .insert_turn("s1", "user", "hello", 1000, None)
             .unwrap()
@@ -326,7 +325,6 @@ mod tests {
         s.sweep_orphan_embeddings(&["carrie"]).unwrap();
         assert!(s.embedding("turn", &t.id.to_string()).unwrap().is_some());
         assert_eq!(s.embedding("turn", &gone.id.to_string()).unwrap(), None);
-        // second sweep: the turn_id migration must not re-run
         s.sweep_orphan_embeddings(&["carrie"]).unwrap();
     }
 

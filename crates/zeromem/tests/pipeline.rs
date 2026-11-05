@@ -91,8 +91,6 @@ fn answer_calibration_replaces_unsupported_date() {
     let zm = corpus();
     let q = "When did I move to Jersey City?";
     let result = zm.query(q, None).unwrap();
-    // Unique-candidate replacement: calibrate against the evidence item that
-    // carries the date. With multiple dates in scope the answer must be kept.
     let dated: Vec<&str> = result
         .evidence
         .iter()
