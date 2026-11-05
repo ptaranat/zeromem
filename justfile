@@ -31,6 +31,9 @@ wheel: venv
 pysmoke: dev
     .venv/bin/python hermes/zeromem/smoke.py
 
+versions:
+    scripts/check-versions.sh
+
 ccsmoke:
     cargo build -q --no-default-features
     scripts/ccsmoke.sh target/debug/zm
