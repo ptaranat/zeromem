@@ -248,4 +248,5 @@ class ZeroMemProvider(MemoryProvider):
         path.write_text(json.dumps(values, indent=2))
 
 
-PROVIDER_CLASS = ZeroMemProvider
+def register(ctx) -> None:
+    ctx.register_memory_provider(ZeroMemProvider())

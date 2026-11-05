@@ -12,8 +12,20 @@ spec.loader.exec_module(mod)
 ZeroMemProvider = mod.ZeroMemProvider
 
 
+class RecordingContext:
+    def __init__(self) -> None:
+        self.providers = []
+
+    def register_memory_provider(self, provider) -> None:
+        self.providers.append(provider)
+
+
 def main() -> None:
-    provider = ZeroMemProvider()
+    ctx = RecordingContext()
+    mod.register(ctx)
+    assert len(ctx.providers) == 1, ctx.providers
+    provider = ctx.providers[0]
+    assert isinstance(provider, ZeroMemProvider), provider
     assert provider.name == "zeromem"
     assert provider.is_available(), "zeromem wheel not importable"
 
