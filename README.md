@@ -88,8 +88,11 @@ m.calibrate_answer("When did I move?", "June 2021", ["I moved to Jersey City on 
 
 ```
 ln -s $(pwd)/hermes/zeromem ~/.hermes/plugins/zeromem
-uv pip install --python <hermes-python> target/wheels/zeromem-*.whl
+uv pip install --python <hermes-python> zeromem
 ```
+
+The first run downloads the embedding model from Hugging Face into
+`~/.hermes/memory/zeromem-models`.
 
 Set in `~/.hermes/config.yaml`:
 

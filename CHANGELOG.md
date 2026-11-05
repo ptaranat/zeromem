@@ -1,7 +1,29 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-11-04
 
+Retrieval fixes from benchmarking against the authors' released code.
+LoCoMo evidence recall at top_k=5 goes from 0.249 to 0.573, and reaches
+0.821 at top_k=50 (the official code scores 0.848 at a similar context
+size).
+
+- `query()` returns `top_k` main results, each with its supporting turns.
+  It used to cut the interleaved main/support list to `top_k`, which kept
+  two of five mains.
+- The graph view adds BM25 to its turn scores (`graph_lexical_weight`,
+  default 1.0), so a turn that shares the question's words scores without
+  an entity or dense match.
+- Relative time words ("yesterday", "last week", "recently") count as time
+  mentions and no longer force latest-only supersession.
+- "Last session" means the session before the current one. The Python
+  binding takes `query(text, top_k=None, exclude_session=None)`, and the
+  Hermes plugin's prefetch and recall tool skip the active session.
+- `exclude_session` filters before the final selection, so excluding a
+  session no longer shrinks the result set below `top_k`.
+- `Stats.embedder_is_fallback`, and `zm mcp` warns on the first recall
+  when running the hash fallback embedder.
+- `zm hook` writes its offset file under a pid-suffixed temp name, and the
+  embedding-cache sweep joins on an indexed integer column.
 - The dense embedder is selectable: `bge-small-en-v1.5` (default) or
   `multilingual-e5-small`, via `zm --model`, `ZeroMem(..., model=)` in
   Python, and `model` in the Hermes plugin's `zeromem.json`. An unknown name
@@ -9,6 +31,12 @@
   multilingual push in #8.
 - Rust: `default_embedder(dir)` is now `dense_embedder(model, dir)`, and
   `mcp::Server::new` takes `Option<DenseModel>` in place of `use_model`.
+||||||| Stash base
+- Published to PyPI as `zeromem`, with `abi3` wheels for Linux, macOS and
+  Windows. Model downloads use rustls, so the wheels need no system OpenSSL.
+- The Hermes plugin registers through `register(ctx)`, declares the wheel in
+  `python_dependencies`, and passes `hermes plugins validate`.
+
 
 ## [0.3.0] - 2026-08-20
 
