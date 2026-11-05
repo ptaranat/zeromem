@@ -4,8 +4,7 @@ Wraps the zeromem Rust core (Zero-Mem, arXiv 2607.29377). Every memory
 operation is deterministic and token-free; only the host's own reader call
 touches an LLM.
 
-Install: symlink this directory to ~/.hermes/plugins/zeromem/, install
-the zeromem wheel into the Hermes environment, set memory.provider: zeromem.
+Install with `hermes plugins install zeromem`, then set memory.provider: zeromem.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from agent.memory_provider import MemoryProvider
-except ImportError:  # standalone tests
+except ImportError:
     class MemoryProvider:
         pass
 
@@ -73,6 +72,36 @@ def _format_evidence(evidence: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _load_config(hermes_home: Path) -> Dict[str, Any]:
+    cfg_path = hermes_home / "memory" / "zeromem.json"
+    if cfg_path.exists():
+        try:
+            return json.loads(cfg_path.read_text())
+        except ValueError:
+            logger.warning("zeromem: ignoring malformed %s", cfg_path)
+    return {}
+
+
+def _db_path(hermes_home: Path, config: Dict[str, Any]) -> str:
+    return config.get("db_path") or str(hermes_home / "memory" / "zeromem.db")
+
+
+def _open_store(hermes_home: Path, config: Dict[str, Any]):
+    import zeromem
+
+    db = _db_path(hermes_home, config)
+    Path(db).parent.mkdir(parents=True, exist_ok=True)
+    use_model = config.get("use_model", True)
+    # only pass model when it applies, so the plugin still loads against an older wheel
+    model = {"model": config["model"]} if use_model and config.get("model") else {}
+    return zeromem.ZeroMem(
+        db,
+        use_model=use_model,
+        model_cache_dir=str(hermes_home / "memory" / "zeromem-models"),
+        **model,
+    )
+
+
 class ZeroMemProvider(MemoryProvider):
     def __init__(self) -> None:
         self._mem = None
@@ -97,30 +126,12 @@ class ZeroMemProvider(MemoryProvider):
             return False
 
     def initialize(self, session_id: str, **kwargs) -> None:
-        import zeromem
-
         hermes_home = Path(kwargs.get("hermes_home") or Path.home() / ".hermes")
         self._session_id = session_id
-        # cron/subagent contexts: read-only
         self._read_only = kwargs.get("agent_context", "primary") != "primary"
 
-        cfg_path = hermes_home / "memory" / "zeromem.json"
-        if cfg_path.exists():
-            try:
-                self._config = json.loads(cfg_path.read_text())
-            except ValueError:
-                logger.warning("zeromem: ignoring malformed %s", cfg_path)
-        db = self._config.get("db_path") or str(hermes_home / "memory" / "zeromem.db")
-        Path(db).parent.mkdir(parents=True, exist_ok=True)
-        use_model = self._config.get("use_model", True)
-        # only pass model when it applies, so the plugin still loads against an older wheel
-        model = {"model": self._config["model"]} if use_model and self._config.get("model") else {}
-        self._mem = zeromem.ZeroMem(
-            db,
-            use_model=use_model,
-            model_cache_dir=str(hermes_home / "memory" / "zeromem-models"),
-            **model,
-        )
+        self._config = _load_config(hermes_home)
+        self._mem = _open_store(hermes_home, self._config)
         if not self._read_only:
             self._writer = threading.Thread(target=self._drain_writes, daemon=True, name="zeromem-writer")
             self._writer.start()

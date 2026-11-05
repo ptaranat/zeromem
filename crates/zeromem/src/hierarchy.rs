@@ -131,8 +131,8 @@ mod tests {
         let c = cfg();
         let e = vec![1.0, 0.0];
         h.push_turn(0, "s1", 10, &e, &c);
-        h.push_turn(1, "s1", 500, &e, &c); // gap
-        h.push_turn(2, "s2", 501, &e, &c); // session change
+        h.push_turn(1, "s1", 500, &e, &c);
+        h.push_turn(2, "s2", 501, &e, &c);
         assert_eq!(h.episodes.len(), 3);
         assert_eq!(h.episodes[2].session_id, "s2");
     }

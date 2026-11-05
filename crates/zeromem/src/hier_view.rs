@@ -38,7 +38,6 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
         0.5 * dense + 0.5 * lex
     };
 
-    // episode beam
     let mut episode_scores: Vec<(u32, f32)> = input
         .hier
         .episodes
@@ -60,7 +59,6 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
     episode_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
     episode_scores.truncate(cfg.episode_beam);
 
-    // window beam within surviving episodes
     let mut window_scores: Vec<(u32, f32)> = Vec::new();
     for (ep, _) in &episode_scores {
         for (wid, w) in input.hier.windows_of_episode(*ep) {

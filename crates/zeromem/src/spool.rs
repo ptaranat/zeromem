@@ -102,12 +102,11 @@ pub fn drain(home: &Path, zm: &mut ZeroMem) -> Result<usize> {
                     touch(&target);
                     target
                 }
-                // another server claimed it between readdir and rename
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(err) => return Err(err.into()),
             }
         } else {
-            path // adopted stale claim, already renamed once
+            path
         };
         // an adopted claim can vanish if its slow owner finishes after all
         let body = match std::fs::read_to_string(&claimed) {
@@ -204,7 +203,6 @@ mod tests {
             ZeroMem::open_in_memory(Config::default(), Box::new(HashEmbedder::default())).unwrap();
         append_event(&home, &[turn("u1", "Carrie runs the register.")]).unwrap();
         drain(&home, &mut zm).unwrap();
-        // same uuid spooled again, e.g. an adopted claim already ingested
         append_event(&home, &[turn("u1", "Carrie runs the register.")]).unwrap();
         assert_eq!(drain(&home, &mut zm).unwrap(), 0);
         assert_eq!(zm.stats().turns, 1);
@@ -220,11 +218,9 @@ mod tests {
         let claim = path.with_extension("jsonl.claim-99999");
         std::fs::rename(&path, &claim).unwrap();
 
-        // fresh claim: some other server is on it
         assert_eq!(drain(&home, &mut zm).unwrap(), 0);
         assert!(claim.exists());
 
-        // stale claim: that server is gone, adopt
         let old =
             std::time::SystemTime::now() - std::time::Duration::from_secs(STALE_CLAIM_SECS * 2);
         let f = std::fs::File::options().append(true).open(&claim).unwrap();

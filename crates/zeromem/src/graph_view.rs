@@ -55,7 +55,6 @@ fn seed_and_propagate(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32>
             act.insert(id, 1.0);
         }
     }
-    // no exact match: dense alignment
     if act.is_empty() && !g.is_empty() {
         for subject in &input.profile.subjects {
             let sub_vec = best_effort_entity_vec(subject, input);
@@ -77,7 +76,6 @@ fn seed_and_propagate(input: &GraphViewInput, cfg: &Config) -> HashMap<u32, f32>
         return act;
     }
 
-    // sim(q, z) per turn, shared across propagation steps
     let turn_sim: Vec<f32> = input
         .turn_vecs
         .iter()
@@ -130,7 +128,6 @@ fn personalized_pagerank(
     let nt = input.turns.len();
     let n = ne + nt;
 
-    // reset: entity activations + dense context priors, half mass each
     let mut reset = vec![0.0f32; n];
     let act_total: f32 = activations.values().sum();
     let priors: Vec<f32> = input

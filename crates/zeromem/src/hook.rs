@@ -30,7 +30,6 @@ pub fn run(home: &Path, input: &str) -> Result<usize> {
 
     let mut file = match std::fs::File::open(transcript_path) {
         Ok(f) => f,
-        // transcript gone (cleanup, retention): nothing to do
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(0),
         Err(err) => return Err(err.into()),
     };
@@ -119,10 +118,8 @@ mod tests {
         std::fs::write(&transcript, format!("{}\n", transcript_line("u1", "first"))).unwrap();
 
         assert_eq!(run(&home, &hook_input(&transcript)).unwrap(), 1);
-        // second run, nothing new
         assert_eq!(run(&home, &hook_input(&transcript)).unwrap(), 0);
 
-        // append one line plus one incomplete line
         let mut body = std::fs::read_to_string(&transcript).unwrap();
         body.push_str(&format!("{}\n", transcript_line("u2", "second")));
         body.push_str("{\"type\":\"user\",\"uuid\":\"u3\"");

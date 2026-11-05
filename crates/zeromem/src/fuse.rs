@@ -58,7 +58,7 @@ mod tests {
         let fused = fuse(&g, &h, 0.6, 0.4, 10);
         let score = |d: u32| fused.iter().find(|(x, _)| *x == d).unwrap().1;
         assert!((score(0) - 0.6).abs() < 1e-6);
-        assert!((score(1) - 0.4).abs() < 1e-6); // min of g (0.0) + max of h (0.4)
+        assert!((score(1) - 0.4).abs() < 1e-6);
         assert!((score(2) - 0.0).abs() < 1e-6);
     }
 

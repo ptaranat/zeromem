@@ -4,12 +4,17 @@ import importlib.util
 import json
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("zeromem_provider", Path(__file__).parent / "__init__.py")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 ZeroMemProvider = mod.ZeroMemProvider
+
+cli_spec = importlib.util.spec_from_file_location("zeromem_cli", Path(__file__).parent / "cli.py")
+cli = importlib.util.module_from_spec(cli_spec)
+cli_spec.loader.exec_module(cli)
 
 
 class RecordingContext:
@@ -47,7 +52,6 @@ def main() -> None:
         time.sleep(0.05)
     assert stats["turns"] >= 4, stats
 
-    # the active session is already in context, so recall skips it
     out = json.loads(provider.handle_tool_call("zeromem_recall", {"query": "What breed is Lychee?"}))
     assert not out["evidence"], out["evidence"]
 
@@ -81,6 +85,19 @@ def main() -> None:
     assert stats["turns"] == 0, f"forgotten session resurrected: {stats}"
 
     provider.shutdown()
+
+    sessions = [{"id": "s1", "messages": [
+        {"role": "session_meta", "content": "skip", "timestamp": 1},
+        {"role": "user", "content": "keep", "timestamp": 3},
+        {"role": "tool", "content": "skip", "timestamp": 4},
+        {"role": "assistant", "content": "", "timestamp": 5},
+        {"role": "assistant", "content": "already here", "timestamp": 2},
+        {"role": "user", "content": "keep", "timestamp": 3},
+    ]}]
+    existing = Counter({("s1", "assistant", "already here"): 1, ("s1", "user", "keep"): 1})
+    assert cli.new_turns(sessions, existing) == [("s1", "user", "keep", 3)]
+    assert len(cli.new_turns(sessions, Counter())) == 3
+
     print("smoke ok:", json.dumps(stats))
 
 
