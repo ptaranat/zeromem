@@ -1,6 +1,7 @@
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use pyo3::IntoPyObjectExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -8,35 +9,33 @@ fn err<E: std::fmt::Display>(e: E) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
-fn to_py(py: Python<'_>, value: &serde_json::Value) -> PyObject {
+fn to_py<'py>(py: Python<'py>, value: &serde_json::Value) -> PyResult<Bound<'py, PyAny>> {
     match value {
-        serde_json::Value::Null => py.None(),
-        serde_json::Value::Bool(b) => b.into_py(py),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i.into_py(py)
-            } else {
-                n.as_f64().unwrap_or(0.0).into_py(py)
-            }
-        }
-        serde_json::Value::String(s) => s.into_py(py),
-        serde_json::Value::Array(a) => {
-            let items: Vec<PyObject> = a.iter().map(|v| to_py(py, v)).collect();
-            items.into_py(py)
-        }
+        serde_json::Value::Null => Ok(py.None().into_bound(py)),
+        serde_json::Value::Bool(b) => b.into_bound_py_any(py),
+        serde_json::Value::Number(n) => match n.as_i64() {
+            Some(i) => i.into_bound_py_any(py),
+            None => n.as_f64().unwrap_or(0.0).into_bound_py_any(py),
+        },
+        serde_json::Value::String(s) => s.into_bound_py_any(py),
+        serde_json::Value::Array(a) => a
+            .iter()
+            .map(|v| to_py(py, v))
+            .collect::<PyResult<Vec<_>>>()?
+            .into_bound_py_any(py),
         serde_json::Value::Object(o) => {
-            let d = PyDict::new_bound(py);
+            let d = PyDict::new(py);
             for (k, v) in o {
-                let _ = d.set_item(k, to_py(py, v));
+                d.set_item(k, to_py(py, v)?)?;
             }
-            d.into_py(py)
+            Ok(d.into_any())
         }
     }
 }
 
-fn json_out<T: serde::Serialize>(py: Python<'_>, value: &T) -> PyResult<PyObject> {
+fn json_out<'py, T: serde::Serialize>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, PyAny>> {
     let v = serde_json::to_value(value).map_err(err)?;
-    Ok(to_py(py, &v))
+    to_py(py, &v)
 }
 
 /// Zero-Mem store over a single SQLite file.
@@ -93,13 +92,13 @@ impl ZeroMem {
     /// exclude_session drops that session from results and from session-boundary
     /// counting, so "last session" means the one before it.
     #[pyo3(signature = (text, top_k = None, exclude_session = None))]
-    fn query(
+    fn query<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         text: &str,
         top_k: Option<usize>,
         exclude_session: Option<&str>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         let mut inner = self.inner.lock().unwrap();
         inner.exclude_session(exclude_session);
         let result = inner.query(text, top_k);
@@ -108,19 +107,19 @@ impl ZeroMem {
     }
 
     /// calibrate_answer(query, answer, evidence_texts) -> {"answer", "changed", "supported", "candidates"}
-    fn calibrate_answer(
+    fn calibrate_answer<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         query: &str,
         answer: &str,
         evidence_texts: Vec<String>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         let refs: Vec<&str> = evidence_texts.iter().map(String::as_str).collect();
         let out = self.inner.lock().unwrap().calibrate_answer(query, answer, &refs);
         json_out(py, &out)
     }
 
-    fn stats(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let s = self.inner.lock().unwrap().stats();
         json_out(py, &s)
     }
