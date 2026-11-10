@@ -6,6 +6,8 @@ zeromem is a Rust implementation of Zero-Mem by Xiao et al. ([paper](https://arx
 
 ## Install
 
+zeromem is in the [Hermes plugin catalog](https://hermes-agent.nousresearch.com/marketplace/zeromem):
+
 ```
 hermes plugins install zeromem
 ```
