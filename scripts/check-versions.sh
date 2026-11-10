@@ -20,7 +20,7 @@ expect "hermes/zeromem/plugin.yaml version" \
 expect "claude plugin.json version" \
   "$(sed -n 's/^  "version": "\(.*\)",$/\1/p' claude/zeromem/.claude-plugin/plugin.json)" "$version"
 expect "hermes/zeromem/plugin.yaml python_dependencies" \
-  "$(sed -n 's/^  - \(zeromem[<>=~!].*\)$/\1/p' hermes/zeromem/plugin.yaml)" "zeromem>=$major.$minor,<$major.$((minor + 1))"
+  "$(sed -n 's/^  - \(zeromem[<>=~!].*\)$/\1/p' hermes/zeromem/plugin.yaml)" "zeromem>=$version,<$major.$((minor + 1))"
 expect "CHANGELOG.md latest entry" \
   "$(sed -n 's/^## \[\(.*\)\].*$/\1/p' CHANGELOG.md | head -1)" "$version"
 if [ "${GITHUB_REF_TYPE:-}" = tag ]; then

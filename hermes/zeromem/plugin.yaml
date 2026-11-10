@@ -9,4 +9,4 @@ provides_tools:
   - zeromem_forget_session
 dependencies: []
 python_dependencies:
-  - zeromem>=0.4,<0.5
+  - zeromem>=0.4.1,<0.5
