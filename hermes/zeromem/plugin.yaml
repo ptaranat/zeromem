@@ -1,7 +1,7 @@
 name: zeromem
 version: 0.4.0
-requires_hermes: ">=0.22"
-description: "Zero-token memory for Hermes: provenance-preserving retrieval over raw traces, no LLM calls in the memory path. Rust core, single SQLite file."
+requires_hermes: ">=0.22.0"
+description: "Local memory that keeps every message word for word in one SQLite file. Storing and searching make no LLM calls and cost zero tokens."
 author: Panat Taranat
 provides_tools:
   - zeromem_recall

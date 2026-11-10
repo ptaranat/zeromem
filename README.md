@@ -6,6 +6,8 @@ zeromem is a Rust implementation of Zero-Mem by Xiao et al. ([paper](https://arx
 
 ## Install
 
+zeromem is in the [Hermes plugin catalog](https://hermes-agent.nousresearch.com/marketplace/zeromem):
+
 ```
 hermes plugins install zeromem
 ```
@@ -26,7 +28,7 @@ hermes zeromem import        # preview
 hermes zeromem import --yes
 ```
 
-The provider syncs turns in the background, prefetches evidence before each turn, and gives your agent `zeromem_recall` and `zeromem_stats`. Recall skips the active session since it's already in context, so "last session" means the one before it.
+The provider syncs turns in the background, prefetches evidence before each turn, and gives your agent `zeromem_recall`, `zeromem_stats` and `zeromem_forget_session`. Recall skips the active session since it's already in context, so "last session" means the one before it.
 
 For Spanish or other non-English conversations, set `{"model": "multilingual-e5-small"}` in `~/.hermes/memory/zeromem.json`.
 
@@ -147,6 +149,6 @@ The `fastembed` feature (default) pulls onnxruntime and downloads bge-small-en-v
 
 ## Credits
 
-Method from the [Zero-Mem paper](https://arxiv.org/abs/2607.29377) and [official code](https://github.com/Zero-Mem/Zero-mem) by Yilin Xiao, Zhehan Zhu, Yujing Zhang, Jin Chen, Zijin Hong, Luyao Zhuang, Qinggang Zhang, Shengyuan Chen, Xiaocao Ouyang, Lingfei Ren, and Xiao Huang. This is an independent clean-room implementation from the paper text; the authors' reference code was not published at the time of writing. Integration shape follows [mnemosyne](https://github.com/mnemosyne-oss/mnemosyne).
+Method from the [Zero-Mem paper](https://arxiv.org/abs/2607.29377) and [official code](https://github.com/Zero-Mem/Zero-mem) by Yilin Xiao, Zhehan Zhu, Yujing Zhang, Jin Chen, Zijin Hong, Luyao Zhuang, Qinggang Zhang, Shengyuan Chen, Xiaocao Ouyang, Lingfei Ren, and Xiao Huang. zeromem started as a clean-room implementation from the paper text, before the authors released their code. The 0.4.0 retrieval fixes came from benchmarking against that code once it was out, so later versions aren't clean-room. Integration shape follows [mnemosyne](https://github.com/mnemosyne-oss/mnemosyne).
 
 MIT licensed.
