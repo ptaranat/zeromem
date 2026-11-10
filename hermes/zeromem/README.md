@@ -27,8 +27,10 @@ Your agent gets `zeromem_recall`, `zeromem_stats` and `zeromem_forget_session`.
 ## What it does on your machine
 
 - Installs the `zeromem` wheel from PyPI.
-- Downloads the bge-small-en-v1.5 embedding model (about 130MB) from Hugging Face on first run, into `~/.hermes/memory/zeromem-models`. After that it makes no network calls.
+- Downloads the bge-small-en-v1.5 embedding model (about 130MB) from Hugging Face on first run, into `~/.hermes/memory/zeromem-models`. After that it makes no network calls. To skip the download, set `{"use_model": false}` in `~/.hermes/memory/zeromem.json`; it then uses a hash embedder with slightly lower recall.
 - Stores every user and assistant message as plain text in `~/.hermes/memory/zeromem.db`. Nothing leaves your machine.
+- Recalls from every session in the profile, not only the current chat. On a gateway that includes every chat and every sender, so one person's messages can come back in another person's conversation.
+- `zeromem_forget_session` permanently deletes a past session's stored turns. The tool tells your agent to use it only when you ask, and it refuses to delete the active session.
 - Writes in a background thread and adds recalled messages to your agent's context before each turn.
 - `hermes zeromem import` runs `hermes sessions export` to read your session history.
 
