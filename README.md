@@ -26,7 +26,7 @@ hermes zeromem import        # preview
 hermes zeromem import --yes
 ```
 
-The provider syncs turns in the background, prefetches evidence before each turn, and gives your agent `zeromem_recall` and `zeromem_stats`. Recall skips the active session since it's already in context, so "last session" means the one before it.
+The provider syncs turns in the background, prefetches evidence before each turn, and gives your agent `zeromem_recall`, `zeromem_stats` and `zeromem_forget_session`. Recall skips the active session since it's already in context, so "last session" means the one before it.
 
 For Spanish or other non-English conversations, set `{"model": "multilingual-e5-small"}` in `~/.hermes/memory/zeromem.json`.
 
