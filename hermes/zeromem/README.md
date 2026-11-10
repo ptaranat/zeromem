@@ -26,6 +26,8 @@ Your agent gets `zeromem_recall`, `zeromem_stats` and `zeromem_forget_session`.
 
 ## What it does on your machine
 
+Paths here use the default `~/.hermes`. If you set `HERMES_HOME`, they live under that directory instead.
+
 - Installs the `zeromem` wheel from PyPI.
 - Downloads the bge-small-en-v1.5 embedding model (about 130MB) from Hugging Face on first run, into `~/.hermes/memory/zeromem-models`. After that it makes no network calls. To skip the download, set `{"use_model": false}` in `~/.hermes/memory/zeromem.json`; it then uses a hash embedder with slightly lower recall.
 - Stores every user and assistant message as plain text in `~/.hermes/memory/zeromem.db`. Nothing leaves your machine.
