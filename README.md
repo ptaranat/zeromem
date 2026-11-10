@@ -147,6 +147,6 @@ The `fastembed` feature (default) pulls onnxruntime and downloads bge-small-en-v
 
 ## Credits
 
-Method from the [Zero-Mem paper](https://arxiv.org/abs/2607.29377) and [official code](https://github.com/Zero-Mem/Zero-mem) by Yilin Xiao, Zhehan Zhu, Yujing Zhang, Jin Chen, Zijin Hong, Luyao Zhuang, Qinggang Zhang, Shengyuan Chen, Xiaocao Ouyang, Lingfei Ren, and Xiao Huang. This is an independent clean-room implementation from the paper text; the authors' reference code was not published at the time of writing. Integration shape follows [mnemosyne](https://github.com/mnemosyne-oss/mnemosyne).
+Method from the [Zero-Mem paper](https://arxiv.org/abs/2607.29377) and [official code](https://github.com/Zero-Mem/Zero-mem) by Yilin Xiao, Zhehan Zhu, Yujing Zhang, Jin Chen, Zijin Hong, Luyao Zhuang, Qinggang Zhang, Shengyuan Chen, Xiaocao Ouyang, Lingfei Ren, and Xiao Huang. zeromem started as a clean-room implementation from the paper text, before the authors released their code. The 0.4.0 retrieval fixes came from benchmarking against that code once it was out, so later versions aren't clean-room. Integration shape follows [mnemosyne](https://github.com/mnemosyne-oss/mnemosyne).
 
 MIT licensed.
