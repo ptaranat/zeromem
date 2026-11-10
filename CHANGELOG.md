@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1] - 2026-11-10
+
+Dependency security fixes and Hermes history import.
+
+- pyo3 0.30, rusqlite 0.41 (bundled SQLite through libsqlite3-sys 0.39)
+  and patched rustls and webpki releases, which clear the RustSec
+  advisories reported against 0.4.0. The Python binding now raises if
+  converting a result fails, where it used to drop the field.
+- `hermes zeromem import` backfills past Hermes conversations into the
+  store with no LLM calls. It previews by default, `--yes` writes, and
+  re-runs add only what's missing.
+- The Hermes plugin declares `requires_hermes: ">=0.22.0"`.
+
 ## [0.4.0] - 2026-11-04
 
 Retrieval fixes from benchmarking against the authors' released code.
