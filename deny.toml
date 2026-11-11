@@ -1,0 +1,7 @@
+[advisories]
+ignore = [
+    # Unmaintained notices with no fixed release, both reached only through
+    # the fastembed feature. Revisit when fastembed drops them.
+    { id = "RUSTSEC-2025-0119", reason = "number_prefix, via fastembed -> hf-hub -> indicatif" },
+    { id = "RUSTSEC-2024-0436", reason = "paste, via fastembed -> image" },
+]
