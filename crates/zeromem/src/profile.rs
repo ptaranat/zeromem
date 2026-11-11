@@ -38,6 +38,18 @@ pub enum Boundary {
     LastSession,
 }
 
+impl Boundary {
+    /// The one session this boundary admits, or None when the store has no
+    /// such session (a "third session" question asked after two).
+    pub fn session(self, session_order: &[String]) -> Option<&str> {
+        match self {
+            Boundary::SessionOrdinal(k) => session_order.get(k),
+            Boundary::LastSession => session_order.last(),
+        }
+        .map(String::as_str)
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct QueryProfile {
     /// Canonical entity names anchoring the query.

@@ -361,7 +361,7 @@ impl ZeroMem {
             .collect();
         let query_vec = self.embedder.embed_query(query)?;
 
-        let graph_scores = graph_view::retrieve(
+        let mut graph_scores = graph_view::retrieve(
             &graph_view::GraphViewInput {
                 graph: &self.graph,
                 turns: &self.turns,
@@ -373,6 +373,12 @@ impl ZeroMem {
             },
             &cfg,
         );
+        // Calibration drops turns outside a session boundary, so they must
+        // not take fusion slots from turns it would keep.
+        if let Some(boundary) = profile.boundary {
+            let target = boundary.session(&session_order);
+            graph_scores.retain(|t, _| target == Some(self.turns[*t as usize].session_id.as_str()));
+        }
         let hier_scores = hier_view::retrieve(
             &hier_view::HierViewInput {
                 hier: &self.hier,
@@ -617,6 +623,115 @@ mod tests {
             result.evidence.iter().all(|e| e.session_id == "b"),
             "{result:?}"
         );
+    }
+
+    /// No dense signal at all, so a turn scores only on shared words.
+    struct ZeroEmbedder;
+
+    impl Embedder for ZeroEmbedder {
+        fn id(&self) -> String {
+            "zero".into()
+        }
+        fn dim(&self) -> usize {
+            8
+        }
+        fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+            Ok(texts.iter().map(|_| vec![0.0; 8]).collect())
+        }
+    }
+
+    fn many_sessions_then(last: &[&str]) -> ZeroMem {
+        many_sessions_with(Box::new(HashEmbedder::default()), last)
+    }
+
+    fn many_sessions_with(embedder: Box<dyn Embedder>, last: &[&str]) -> ZeroMem {
+        let mut zm = ZeroMem::open_in_memory(Config::default(), embedder).unwrap();
+        let topics = [
+            "Carrie ordered the Slowdive vinyl from the distributor.",
+            "The Square reader dropped offline during the Friday rush.",
+            "We talked about moving the zine rack next to the register.",
+            "Panat priced the used Magic cards for the display case.",
+            "The book club picked a Le Guin novel for next month.",
+            "Talked through the event calendar for the comics night.",
+        ];
+        let mut ts = 1000;
+        for s in 0..12 {
+            for (i, topic) in topics.iter().enumerate() {
+                if (s + i) % 2 == 0 {
+                    zm.ingest_turn(&format!("old{s}"), "user", topic, ts)
+                        .unwrap();
+                    ts += 10;
+                }
+            }
+        }
+        for text in last {
+            zm.ingest_turn("prev", "user", text, ts).unwrap();
+            ts += 10;
+        }
+        zm.ingest_turn("cur", "user", "What did we talk about last session?", ts)
+            .unwrap();
+        zm.exclude_session(Some("cur"));
+        zm
+    }
+
+    #[test]
+    fn last_session_found_when_it_shares_no_words_with_the_question() {
+        let zm = many_sessions_then(&[
+            "Lychee has a vet appointment on Tuesday morning.",
+            "Remember to buy more cat litter.",
+        ]);
+        let result = zm
+            .query("What did we talk about last session?", Some(5))
+            .unwrap();
+        assert!(!result.evidence.is_empty(), "{result:?}");
+        assert!(
+            result.evidence.iter().all(|e| e.session_id == "prev"),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn last_session_found_with_no_similarity_signal_at_all() {
+        let zm = many_sessions_with(
+            Box::new(ZeroEmbedder),
+            &[
+                "Lychee has a vet appointment on Tuesday morning.",
+                "Remember to buy more cat litter.",
+            ],
+        );
+        let result = zm
+            .query("What did we talk about last session?", Some(5))
+            .unwrap();
+        let mut texts: Vec<&str> = result.evidence.iter().map(|e| e.text.as_str()).collect();
+        texts.sort();
+        assert_eq!(
+            texts,
+            [
+                "Lychee has a vet appointment on Tuesday morning.",
+                "Remember to buy more cat litter."
+            ],
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn last_session_topic_question_prefers_matching_turns() {
+        let zm = many_sessions_then(&[
+            "Lychee has a vet appointment on Tuesday morning.",
+            "The Square invoice for the new terminal came in.",
+            "Remember to buy more cat litter.",
+        ]);
+        let result = zm
+            .query(
+                "Remind me what we discussed last session about Square",
+                Some(5),
+            )
+            .unwrap();
+        assert!(
+            result.evidence.iter().all(|e| e.session_id == "prev"),
+            "{result:?}"
+        );
+        assert!(result.evidence[0].text.contains("Square"), "{result:?}");
     }
 
     #[test]

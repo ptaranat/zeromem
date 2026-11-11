@@ -3,7 +3,7 @@
 use crate::closure::{EvidenceRole, Selected};
 use crate::config::Config;
 use crate::ner::{EntityExtractor, EntityKind, HeuristicNer};
-use crate::profile::{AnswerType, Boundary, QueryProfile, RecencyPref};
+use crate::profile::{AnswerType, QueryProfile, RecencyPref};
 use crate::trace::Turn;
 use std::collections::HashSet;
 
@@ -67,16 +67,9 @@ fn distance(a: u32, b: u32) -> u32 {
 }
 
 fn violates_boundary(turn: &Turn, profile: &QueryProfile, session_order: &[String]) -> bool {
-    let Some(boundary) = profile.boundary else {
-        return false;
-    };
-    let Some(pos) = session_order.iter().position(|s| *s == turn.session_id) else {
-        return true;
-    };
-    match boundary {
-        Boundary::SessionOrdinal(k) => pos != k,
-        Boundary::LastSession => pos + 1 != session_order.len(),
-    }
+    profile
+        .boundary
+        .is_some_and(|b| b.session(session_order) != Some(turn.session_id.as_str()))
 }
 
 /// Drops mains whose date/number value conflicts with a later-session main
