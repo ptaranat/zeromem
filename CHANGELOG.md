@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2] - 2026-11-11
+
+"Last session" questions work on real stores.
+
+- Questions scoped to a session ("what did we talk about last session",
+  "in our first session") returned nothing when the question shared no
+  words with that session, which on a store with many sessions was most
+  of the time. Retrieval now searches only the named session, so every
+  result comes from it. Questions without a session boundary are
+  unchanged.
+- The Hermes plugin requires `zeromem>=0.4.2`, so an existing install
+  moves to this release when the catalog entry updates.
+
 ## [0.4.1] - 2026-11-10
 
 Dependency security fixes and Hermes history import.

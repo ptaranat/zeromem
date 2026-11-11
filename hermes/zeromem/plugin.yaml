@@ -1,5 +1,5 @@
 name: zeromem
-version: 0.4.1
+version: 0.4.2
 requires_hermes: ">=0.22.0"
 description: "Local memory that keeps every message word for word in one SQLite file. Storing and searching make no LLM calls and cost zero tokens."
 author: Panat Taranat
@@ -9,4 +9,4 @@ provides_tools:
   - zeromem_forget_session
 dependencies: []
 python_dependencies:
-  - zeromem>=0.4.1,<0.5
+  - zeromem>=0.4.2,<0.5
