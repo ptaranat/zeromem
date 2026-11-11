@@ -6,7 +6,7 @@ use crate::graph::EntityGraph;
 use crate::hierarchy::Hierarchy;
 use crate::lexical::{phrase_matches, Bm25};
 use crate::ner::EntityKind;
-use crate::profile::{AnswerType, Boundary, QueryProfile};
+use crate::profile::{AnswerType, QueryProfile};
 use crate::trace::Turn;
 use std::collections::HashMap;
 
@@ -38,11 +38,20 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
         0.5 * dense + 0.5 * lex
     };
 
+    // A session boundary is a hard filter downstream, so the beam searches
+    // only that session's episodes. Otherwise a question sharing no words
+    // with the target session fills the beam from other sessions and
+    // nothing survives the filter.
+    let target = input
+        .profile
+        .boundary
+        .map(|b| b.session(input.session_order));
     let mut episode_scores: Vec<(u32, f32)> = input
         .hier
         .episodes
         .iter()
         .enumerate()
+        .filter(|(_, ep)| target.is_none_or(|t| t == Some(ep.session_id.as_str())))
         .map(|(i, ep)| {
             let mut best = 0.0f32;
             let mut sum = 0.0f32;
@@ -79,6 +88,8 @@ pub fn retrieve(input: &HierViewInput, cfg: &Config) -> HashMap<u32, f32> {
             let s = base(t) * (1.0 + compatibility(input, t));
             if s > 0.0 {
                 out.insert(t, s);
+            } else if target.is_some() {
+                out.insert(t, f32::MIN_POSITIVE);
             }
         }
     }
@@ -115,12 +126,7 @@ fn compatibility(input: &HierViewInput, turn: u32) -> f32 {
         bonus += if inside { 0.3 } else { 0.0 };
     }
     if let Some(boundary) = p.boundary {
-        let session_pos = input.session_order.iter().position(|s| *s == t.session_id);
-        let matches = match (boundary, session_pos) {
-            (Boundary::SessionOrdinal(k), Some(pos)) => pos == k,
-            (Boundary::LastSession, Some(pos)) => pos + 1 == input.session_order.len(),
-            _ => false,
-        };
+        let matches = boundary.session(input.session_order) == Some(t.session_id.as_str());
         bonus += if matches { 0.3 } else { -0.9 };
     }
     let type_hit = match p.answer_type {
