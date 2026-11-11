@@ -3082,7 +3082,7 @@ checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 
 [[package]]
 name = "zeromem"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "fastembed",
  "regex",
@@ -3094,7 +3094,7 @@ dependencies = [
 
 [[package]]
 name = "zeromem-py"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "pyo3",
  "serde",
